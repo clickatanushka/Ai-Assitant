@@ -308,7 +308,8 @@ function renderAnswer(d) {
         <div class="source-card">
           <div class="source-top">
             <span style="font-size:18px">📄</span>
-            <a href="/pdfs/${encodeURIComponent(c.file)}" target="_blank" style="color:var(--text);text-decoration:underline;text-decoration-color:var(--border-strong);cursor:pointer">${esc(c.file)}</a>
+            <a href="/pdfs/${encodeURIComponent(c.file)}" target="_blank" ...>${esc(c.file)} ↗</a>
+            <button onclick="openPdfViewer('/pdfs/${encodeURIComponent(c.file)}')" style="margin-left:8px;padding:3px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--bg);font-family:inherit;font-weight:600">Preview</button>
             <span class="source-page">Page ${c.page}</span>
           </div>
           <div class="source-bilingual">
@@ -401,6 +402,25 @@ function renderCharts() {
 // ── Init ──────────────────────────────────────────────────────────────────
 checkStatus();
 buildGraphInputs();
+function openPdfViewer(url) {
+  document.getElementById('pdfFrame').src = url;
+  document.getElementById('pdfTitle').textContent = decodeURIComponent(url.split('/pdfs/')[1]);
+  const overlay = document.getElementById('pdfOverlay');
+  overlay.style.display = 'flex';
+}
+function closePdfViewer() {
+  document.getElementById('pdfOverlay').style.display = 'none';
+  document.getElementById('pdfFrame').src = '';
+}
 </script>
+<div id="pdfOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
+  <div style="background:white;width:75%;height:85vh;border-radius:8px;overflow:hidden;display:flex;flex-direction:column">
+    <div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee">
+      <span id="pdfTitle" style="font-size:13px;font-weight:600"></span>
+      <button onclick="closePdfViewer()" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <iframe id="pdfFrame" style="flex:1;border:none;width:100%"></iframe>
+  </div>
+</div>
 </body>
 </html>
