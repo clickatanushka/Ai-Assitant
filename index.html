@@ -205,6 +205,27 @@
 </div>
 
 <script>
+window.openPDF = async function(filename) {
+  if (!window._pdfList) {
+    var r = await fetch('/api/pdflist');
+    var d = await r.json();
+    window._pdfList = d.files || [];
+  }
+  // Try exact match first, then fuzzy (collapse spaces)
+  var idx = window._pdfList.indexOf(filename);
+  if (idx < 0) {
+    var norm = filename.replace(/\s+/g, ' ').trim();
+    idx = window._pdfList.findIndex(f => f.replace(/\s+/g, ' ').trim() === norm);
+  }
+  if (idx >= 0) {
+    window.open('/pdf/' + idx, '_blank');
+  } else {
+    window.open('/pdf/' + idx, '_blank');
+  }
+};
+
+
+
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(id, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -280,7 +301,7 @@ function renderAnswer(d) {
   const isNoAnswer = (d.answer_english || '').includes('NO_ANSWER_FOUND');
   const conf = d.confidence || 'medium';
   const citations = d.citations || [];
-  const uniqueSources = citations;
+  const uniqueSources = [...new Map(citations.map(c => [c.file, c])).values()];
 
   let mainContent = '';
   if (isNoAnswer) {
@@ -308,8 +329,8 @@ function renderAnswer(d) {
         <div class="source-card">
           <div class="source-top">
             <span style="font-size:18px">📄</span>
-            <a href="/pdfs/${encodeURIComponent(c.file)}" target="_blank" ...>${esc(c.file)} ↗</a>
-            <button onclick="openPdfViewer('/pdfs/${encodeURIComponent(c.file).replace(/'/g, '%27')}')" style="margin-left:8px;padding:3px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--bg);font-family:inherit;font-weight:600">Preview</button>
+            <span style="color:var(--text);flex:1;word-break:break-all;font-size:14px;font-weight:700;text-decoration:underline;cursor:pointer" data-filename="${esc(c.file)}" onclick="openPDF(this.dataset.filename)">${esc(c.file)}</span>
+              <button data-filename="${esc(c.file)}" onclick="openPDF(this.dataset.filename)" style="flex-shrink:0;padding:3px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--bg);font-family:inherit;font-weight:600">Preview</button>
             <span class="source-page">Page ${c.page}</span>
           </div>
           <div class="source-bilingual">
@@ -402,25 +423,16 @@ function renderCharts() {
 // ── Init ──────────────────────────────────────────────────────────────────
 checkStatus();
 buildGraphInputs();
-function openPdfViewer(url) {
-  document.getElementById('pdfFrame').src = '';
-  setTimeout(() => { document.getElementById('pdfFrame').src = url; }, 100);
-  document.getElementById('pdfTitle').textContent = decodeURIComponent(url.split('/pdfs/')[1]);
-  const overlay = document.getElementById('pdfOverlay');
-  overlay.style.display = 'flex';
-}
-function closePdfViewer() {
-  document.getElementById('pdfOverlay').style.display = 'none';
-  document.getElementById('pdfFrame').src = '';
-}
 </script>
-<div id="pdfOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center">
-  <div style="background:white;width:75%;height:85vh;border-radius:8px;overflow:hidden;display:flex;flex-direction:column">
-    <div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee">
-      <span id="pdfTitle" style="font-size:13px;font-weight:600"></span>
-      <button onclick="closePdfViewer()" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button>
+
+
+<div id="pdfOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;flex-direction:column;align-items:center;justify-content:center">
+  <div style="background:white;width:82%;height:90vh;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,0.5)">
+    <div style="padding:12px 18px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <span id="pdfTitle" style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1a1917"></span>
+      <button onclick="closePDF()" style="border:none;background:#f1f0ed;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:18px;line-height:1;color:#444">✕</button>
     </div>
-    <iframe id="pdfFrame" style="flex:1;border:none;width:100%"></iframe>
+    <embed id="pdfFrame" type="application/pdf" style="flex:1;width:100%;height:100%" src="">
   </div>
 </div>
 </body>
