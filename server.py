@@ -14,7 +14,7 @@ API_KEY_FILE  = "./api_key.txt"
 PORT          = 8000
 CHUNK_SIZE    = 150
 CHUNK_OVERLAP = 20
-TOP_K         = 5
+TOP_K         = 10
 GROQ_MODEL    = "llama-3.3-70b-versatile"
 
 # ── PDF Extraction (text + OCR fallback) ─────────────────────────────────────
@@ -154,8 +154,10 @@ def ask_llm(question, relevant_chunks):
 
     context_parts = []
     for i, chunk in enumerate(relevant_chunks):
+        # Send only first 300 chars of each chunk to save tokens
+        short_text = chunk['text'][:500].strip()
         context_parts.append(
-            f"[Source {i+1}: {chunk['file']}, Page {chunk['page']}]\n{chunk['text']}"
+            f"[Source {i+1}: {chunk['file']}, Page {chunk['page']}]\n{short_text}"
         )
     context = "\n\n---\n\n".join(context_parts)
 
@@ -167,21 +169,22 @@ RELEVANT DOCUMENT EXCERPTS:
 {context}
 
 Instructions:
-- If the documents contain a clear answer, provide it.
-- If the documents do NOT contain a relevant answer, set answer_english to exactly "NO_ANSWER_FOUND" and answer_german to "KEINE_ANTWORT_GEFUNDEN".
+- List ALL sources that contain relevant information, not just one.
+- If the documents contain ANY partial information related to the question, provide that information as the answer.
+- Only set answer_english to "NO_ANSWER_FOUND" if the documents contain absolutely zero relevant information.
 - Always respond ONLY with raw JSON, no markdown, no backticks.
 
 JSON structure:
 {{
   "answer_english": "...",
   "answer_german": "...",
-  "citations": [
+"citations": [
     {{
       "source_num": 1,
       "file": "filename.pdf",
       "page": 5,
-      "original_german": "exact German excerpt",
-      "translated_english": "English translation of excerpt"
+      "original_german": "exact German excerpt from this source",
+      "translated_english": "English translation of that excerpt"
     }}
   ],
   "confidence": "high"
@@ -192,7 +195,7 @@ JSON structure:
         "model": GROQ_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
-        "max_tokens": 2048
+        "max_tokens": 1500
     }).encode("utf-8")
 
     try:

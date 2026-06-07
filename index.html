@@ -280,7 +280,7 @@ function renderAnswer(d) {
   const isNoAnswer = (d.answer_english || '').includes('NO_ANSWER_FOUND');
   const conf = d.confidence || 'medium';
   const citations = d.citations || [];
-  const uniqueSources = [...new Map(citations.map(c => [c.file, c])).values()];
+  const uniqueSources = citations;
 
   let mainContent = '';
   if (isNoAnswer) {
@@ -309,7 +309,7 @@ function renderAnswer(d) {
           <div class="source-top">
             <span style="font-size:18px">📄</span>
             <a href="/pdfs/${encodeURIComponent(c.file)}" target="_blank" ...>${esc(c.file)} ↗</a>
-            <button onclick="openPdfViewer('/pdfs/${encodeURIComponent(c.file)}')" style="margin-left:8px;padding:3px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--bg);font-family:inherit;font-weight:600">Preview</button>
+            <button onclick="openPdfViewer('/pdfs/${encodeURIComponent(c.file).replace(/'/g, '%27')}')" style="margin-left:8px;padding:3px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--bg);font-family:inherit;font-weight:600">Preview</button>
             <span class="source-page">Page ${c.page}</span>
           </div>
           <div class="source-bilingual">
@@ -403,7 +403,8 @@ function renderCharts() {
 checkStatus();
 buildGraphInputs();
 function openPdfViewer(url) {
-  document.getElementById('pdfFrame').src = url;
+  document.getElementById('pdfFrame').src = '';
+  setTimeout(() => { document.getElementById('pdfFrame').src = url; }, 100);
   document.getElementById('pdfTitle').textContent = decodeURIComponent(url.split('/pdfs/')[1]);
   const overlay = document.getElementById('pdfOverlay');
   overlay.style.display = 'flex';
