@@ -220,7 +220,7 @@ window.openPDF = async function(filename) {
   if (idx >= 0) {
     window.open('/pdf/' + idx, '_blank');
   } else {
-    window.open('/pdf/' + idx, '_blank');
+    alert('PDF not found: ' + filename);
   }
 };
 
@@ -301,7 +301,14 @@ function renderAnswer(d) {
   const isNoAnswer = (d.answer_english || '').includes('NO_ANSWER_FOUND');
   const conf = d.confidence || 'medium';
   const citations = d.citations || [];
-  const uniqueSources = [...new Map(citations.map(c => [c.file, c])).values()];
+  // Deduplicate by file+page so all relevant pages show, but no duplicate entries
+  const _seen = new Set();
+  const uniqueSources = citations.filter(c => {
+    const key = `${c.file}|${c.page}`;
+    if (_seen.has(key)) return false;
+    _seen.add(key);
+    return true;
+  });
 
   let mainContent = '';
   if (isNoAnswer) {
