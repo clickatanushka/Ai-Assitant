@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Audit Assistant Backend — Groq + OCR Edition
+Audit Assistant Backend — Gemini Flash Edition
 Run: python server.py
 """
 
@@ -10,33 +10,27 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PDF_DIR       = "./pdfs"
 INDEX_FILE    = "./index.json"
+EMB_FILE      = "./embeddings.npy"
 API_KEY_FILE  = "./api_key.txt"
 PORT          = 8000
 CHUNK_SIZE    = 100
 CHUNK_OVERLAP = 20
 TOP_K         = 15
-GROQ_MODEL    = "llama-3.3-70b-versatile"
+BOOST_CAP     = 0.12   # max lexical filename boost per document (prevents synonym flooding)
+EMB_MODEL_NAME = "BAAI/bge-m3"
+GEMINI_MODEL  = "gemini-2.5-flash"
+GEMINI_URL    = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
-# Local abbreviation expansions — Groq reliably misidentifies SMT/PCB acronyms.
-# When any token matches here, Groq is skipped entirely for the query expansion.
-ABBREV_MAP = {
-    "msl":  "MSL MSD Trockenlagerung Trockenlagerschrank feuchtigkeitsempfindlichkeit feuchteempfindlichkeit",
-    "esd":  "ESD Elektrostatik elektrostatisch Entladung antistatisch ESD-Schutz Erdung",
-    "iqc":  "IQC Wareneingangsprüfung Wareneingangskontrolle Eingangsprüfung Warenannahme Wareneingang",
-    "smt":  "SMT Oberflächenmontage SMD Bestückung Reflow Lötpaste Schablone",
-    "pcb":  "PCB Leiterplatte Platine Schaltung Leiterplattenbestückung",
-    "aoi":  "AOI optische Inspektion Sichtprüfung automatisch Kamera Bildverarbeitung",
-    "ict":  "ICT In-Circuit-Test Leiterplattentest Elektrische Prüfung Nadeltest",
-    "spc":  "SPC statistische Prozesskontrolle Regelkarte Prozessregelung Qualitätsregelung",
-    "ppm":  "PPM Fehlerrate Ausschuss Qualitätskennzahl Reklamationsquote",
-    "bga":  "BGA Löten Reflow Lotperlen Ball-Grid Röntgen",
-    "fifo": "FIFO Reihenfolge Lagerung Umlauf Verbrauchsreihenfolge",
-    "rohs": "RoHS bleifrei Umweltschutz Gefahrstoffe Lötzinn Richtlinie",
-    "fmea": "FMEA Fehleranalyse Risikoanalyse Fehler-Möglichkeit Risikoprioritätszahl",
-    "ppap": "PPAP Erstmuster Erstmusterprüfung Bemusterung Produktionsfreigabe",
-    "8d":   "8D 8D-Report Reklamation Fehleranalyse Abstellmaßnahme Ursachenanalyse",
-    "oee":  "OEE Gesamtanlageneffektivität Anlagenverfügbarkeit Leistung Verfügbarkeit",
-}
+# Lazy-loaded embedding model (loaded on first use to keep startup fast)
+_EMB_MODEL = None
+def get_embedding_model():
+    global _EMB_MODEL
+    if _EMB_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        print(f"Loading embedding model '{EMB_MODEL_NAME}' (first time may download ~470MB)...")
+        _EMB_MODEL = SentenceTransformer(EMB_MODEL_NAME)
+        print("Embedding model ready.")
+    return _EMB_MODEL
 
 # ── PDF Extraction ────────────────────────────────────────────────────────────
 def extract_text_from_pdf(path):
@@ -80,6 +74,19 @@ def chunk_pages(pages, filename):
             })
     return chunks
 
+def _call_gemini(payload_bytes, api_key, timeout=45):
+    """Single Gemini API call; raises urllib.error.HTTPError on failure."""
+    req = urllib.request.Request(
+        GEMINI_URL,
+        data=payload_bytes,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {api_key}",
+                 "User-Agent": "Mozilla/5.0"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
 def get_all_pdfs():
     """Walk PDF_DIR recursively; return sorted list of (filename, full_path)."""
     result = []
@@ -115,192 +122,210 @@ def load_index():
             return json.load(f)
     return build_index()
 
-# ── TF-IDF Search ─────────────────────────────────────────────────────────────
+# ── Semantic Search (multilingual embeddings) ─────────────────────────────────
 def tokenize(text):
     return re.findall(r'\b\w+\b', text.lower())
 
-def build_tfidf(chunks):
-    print("Building search index...")
-    N = len(chunks)
+def stem(w):
+    """Crude German stemmer for lexical matching: strip the participle 'ge-' prefix
+    ('gewaschen' -> 'waschen') and reduce to a 6-char root so inflected forms match
+    ('kalibriert'/'Kalibrierung' -> 'kalibr', 'gewaschen'/'Waschen' -> 'wasche')."""
+    w = w.lower()
+    if len(w) > 7 and w.startswith("ge"):
+        w = w[2:]
+    return w[:6]
+
+def build_idf(chunks):
+    """Inverse-document-frequency of every word-stem across the corpus.
+    Tells us how *distinctive* a term is: 'dokume' (in most docs) → low weight,
+    'stichp' (in one doc) → high weight. Derived purely from the documents — no
+    hardcoded keywords. Used to weight the lexical filename boost in search()."""
+    doc_stems = {}                       # filename -> set of stems it contains
+    for c in chunks:
+        s = doc_stems.setdefault(c["file"], set())
+        for w in tokenize(c["text"]):
+            if len(w) >= 6:
+                s.add(stem(w))
+    N = max(len(doc_stems), 1)
     df = {}
-    chunk_tfs = []
-    for chunk in chunks:
-        words = tokenize(chunk["text"])
-        tf = {}
-        for w in words:
-            tf[w] = tf.get(w, 0) + 1
-        chunk_tfs.append(tf)
-        for w in set(words):
-            df[w] = df.get(w, 0) + 1
-    idf = {w: math.log((N + 1) / (cnt + 1)) for w, cnt in df.items()}
-    print(f"Search index ready ({len(df)} unique terms, {N} chunks)")
-    return chunk_tfs, idf
+    for stems in doc_stems.values():
+        for st in stems:
+            df[st] = df.get(st, 0) + 1
+    return {st: math.log(N / cnt) for st, cnt in df.items()}, math.log(N)
 
-def _compound_root(w, doc_word_set):
-    """Match if w and a doc word share a compound prefix that is ≥6 chars AND covers
-    at least 60% of the longer word.  The 60% guard prevents a short common prefix
-    (e.g. 'feuchtigkeit' ⊂ 'feuchtigkeitsempfindlichkeit') from triggering a match
-    when the words are semantically very different in scope."""
-    for dw in doc_word_set:
-        shorter = min(len(w), len(dw))
-        longer  = max(len(w), len(dw))
-        if shorter >= 6 and shorter >= longer * 0.60:
-            if w.startswith(dw) or dw.startswith(w):
-                return dw
-    return None
+def build_embeddings(chunks):
+    """Embed every chunk (filename + text) into a normalized vector matrix and cache to disk."""
+    import numpy as np
+    model = get_embedding_model()
+    print(f"Embedding {len(chunks)} chunks...")
+    # Prepend the filename so document titles (e.g. 'Stichprobenprüfungen') contribute to the vector
+    texts = [f"{c['file']}\n{c['text']}" for c in chunks]
+    embs = model.encode(
+        texts, batch_size=32, show_progress_bar=True,
+        normalize_embeddings=True, convert_to_numpy=True,
+    ).astype(np.float32)
+    np.save(EMB_FILE, embs)
+    print(f"Search index ready ({embs.shape[0]} vectors, dim {embs.shape[1]})")
+    return embs
 
-def search(query, chunks, chunk_tfs, idf, top_k=TOP_K):
-    q_words = tokenize(query)
-    scores = []
-    for i, (chunk, tf) in enumerate(zip(chunks, chunk_tfs)):
-        doc_len = max(sum(tf.values()), 1)
-        doc_word_set = set(tf.keys())
+def load_embeddings(chunks):
+    """Load cached embeddings if they match the current index, else rebuild."""
+    import numpy as np
+    if os.path.exists(EMB_FILE):
+        try:
+            embs = np.load(EMB_FILE)
+            if embs.shape[0] == len(chunks):
+                print(f"Loaded cached embeddings ({embs.shape[0]} vectors)")
+                return embs
+            print("Embedding cache stale (chunk count changed) — rebuilding.")
+        except Exception as e:
+            print(f"Embedding cache unreadable ({e}) — rebuilding.")
+    return build_embeddings(chunks)
 
-        # TF-IDF: exact match + 70% credit for compound-root match.
-        # This lets "Kalibrierungsplan" (query) score off "Kalibrierung" (doc token).
-        tfidf = 0.0
-        for w in q_words:
-            if w in tf:
-                tfidf += (tf[w] / doc_len) * idf.get(w, 0)
-            else:
-                root = _compound_root(w, doc_word_set)
-                if root:
-                    tfidf += (tf[root] / doc_len) * idf.get(root, 0) * 0.7
-        score = tfidf * 1000
+def translate_to_german(text):
+    """Translate the English query to German (free Google Translate) for the lexical boost."""
+    try:
+        from deep_translator import GoogleTranslator
+        return GoogleTranslator(source='en', target='de').translate(text)
+    except Exception as e:
+        print(f"[translate] {e}")
+        return text
 
-        fname = chunk["file"].lower()
-        text_lower = chunk["text"].lower()
-        # Filename match bonus
-        fname_hits = sum(1 for w in q_words if len(w) > 1 and w in fname)
-        score += fname_hits * 150
-        sig = [w for w in q_words if len(w) > 2]
-        if sig and all(w in fname for w in sig):
-            score += 500
+_EXPANSION_CACHE = {}   # query -> expanded query, so the same question is always identical
 
-        # Word-boundary hit count (prevents "plan" matching inside "Produktionsplanung")
-        hit_count = 0
-        for w in q_words:
-            if len(w) <= 1:
-                continue
-            if re.search(r'\b' + re.escape(w) + r'\b', text_lower):
-                hit_count += 1
-            elif _compound_root(w, doc_word_set):
-                hit_count += 0.5
-        score += hit_count * 25
-        if len(q_words) > 0 and hit_count / len(q_words) > 0.4:
-            score += 300
-        scores.append((score, i))
-    scores.sort(reverse=True)
-    result = []
-    for score, i in scores[:top_k]:
-        if score > 0:
-            c = chunks[i].copy()
-            c["_score"] = score
-            result.append(c)
-    return result
-
-# ── Groq API ──────────────────────────────────────────────────────────────────
-def get_api_key():
-    if os.path.exists(API_KEY_FILE):
-        with open(API_KEY_FILE) as f:
-            return f.read().strip()
-    return os.environ.get("GROQ_API_KEY", "")
-
-def expand_query_to_keywords(question, api_key):
-    """Return German search keywords for the question.
-
-    If the question contains a known SMT/PCB abbreviation, use only the local
-    ABBREV_MAP — Groq reliably misidentifies these and adds noise that drowns
-    out the correct documents.  For all other questions, call Groq.
-    """
-    tokens = [t.strip("?!.,;:").lower() for t in question.split()]
-    local_parts = [ABBREV_MAP[t] for t in tokens if t in ABBREV_MAP]
-
-    if local_parts:
-        # Skip Groq — local expansion is cleaner and Groq would corrupt it
-        return " ".join(local_parts)
-
-    # No known abbreviation → ask Groq for German keyword expansion
+def expand_query(question, api_key):
+    """Expand abbreviations/terse queries into a fuller search query using the LLM's
+    general domain knowledge (e.g. 'MSL' -> 'Moisture Sensitivity Level, dry storage of
+    moisture-sensitive ICs'). This is world knowledge, NOT memorized document mappings —
+    it just turns a terse query into words the semantic search can match. The result is
+    cached per query so the SAME question always yields the SAME search (deterministic).
+    Falls back to the original question on any error."""
+    if not api_key:
+        return question
+    key = question.strip().lower()
+    if key in _EXPANSION_CACHE:
+        return _EXPANSION_CACHE[key]
     payload = json.dumps({
-        "model": GROQ_MODEL,
+        "model": GEMINI_MODEL,
         "messages": [
             {"role": "system", "content": (
-                "You are an expert in German quality management and ISO 9001 audit documents. "
-                "Given an English question, output 8–12 German words/compound-words that would "
-                "literally appear inside German audit process documents (Prozessbeschreibungen) "
-                "that answer this question. Include synonyms, compound forms, and abbreviations. "
-                "Return ONLY a space-separated list. No sentences, no punctuation, no English."
+                "You expand short audit/manufacturing search queries for a document search engine. "
+                "Given a query (possibly a bare acronym or a few words), rewrite it as ONE richer "
+                "search phrase: keep the original words, expand any acronyms using general "
+                "ISO 9001 / electronics-manufacturing knowledge, and add a few closely-related "
+                "synonyms. Do NOT invent document names. Output ONLY the expanded phrase, max 30 words."
             )},
             {"role": "user", "content": question}
         ],
         "temperature": 0,
-        "max_tokens": 120
+        "max_tokens": 200,
+        "reasoning_effort": "none",   # gemini-2.5-flash 'thinking' would eat the token budget
     }).encode("utf-8")
     try:
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "User-Agent": "Mozilla/5.0"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"].strip()
-    except:
+        data = _call_gemini(payload, api_key, timeout=20)
+        expanded = data["choices"][0]["message"]["content"].strip()
+        result = f"{question}. {expanded}" if expanded else question
+        _EXPANSION_CACHE[key] = result
+        return result
+    except Exception as e:
+        print(f"[expand_query] {e}")
         return question
+
+def search(query, chunks, embeddings, top_k=TOP_K):
+    """Hybrid search = semantic similarity + an IDF-weighted lexical boost when a
+    German query keyword appears in a document's filename. The multilingual model
+    matches an English query directly against German text; the lexical boost rescues
+    documents whose distinctive topic word is in the title. Each matched word is
+    weighted by IDF — how rare it is across the corpus — so generic words like
+    'dokumentiert' barely count while distinctive ones like 'Stichprobenprüfung' do.
+    The boost is CAPPED per document so a flood of generic synonyms (e.g. an expanded
+    query matching 'Personal/Kompetenz' in an unrelated title) can't dominate ranking."""
+    import numpy as np
+    model = get_embedding_model()
+    qv = model.encode([query], normalize_embeddings=True, convert_to_numpy=True)[0].astype(np.float32)
+    scores = (embeddings @ qv).astype(np.float32).copy()  # cosine similarity
+
+    # IDF-weighted lexical boost. Stem-match handles German inflection; weight = how
+    # distinctive the word is. Capped so stacked generic matches can't take over.
+    german = translate_to_german(query)
+    gstems = {stem(w) for w in tokenize(german) if len(w) >= 6}
+    weighted = [(st, IDF.get(st, IDF_MAX)) for st in gstems]
+    weighted = [(st, w) for st, w in weighted if w > 0.4]  # drop near-universal terms
+    if weighted:
+        for i, c in enumerate(chunks):
+            fn = c["file"].lower()
+            boost = min(sum(w for st, w in weighted if st in fn) * 0.06, BOOST_CAP)
+            if boost:
+                scores[i] += boost
+
+    order = np.argsort(-scores)[:top_k]
+    result = []
+    for i in order:
+        c = chunks[int(i)].copy()
+        c["_score"] = float(scores[int(i)])
+        result.append(c)
+    return result
+
+# ── Gemini API ────────────────────────────────────────────────────────────────
+def get_api_key():
+    if os.path.exists(API_KEY_FILE):
+        with open(API_KEY_FILE) as f:
+            return f.read().strip()
+    return os.environ.get("GEMINI_API_KEY", "")
 
 def ask_llm(question, relevant_chunks):
     api_key = get_api_key()
     if not api_key:
-        return {"error": "No API key. Click Settings and add your Groq API key."}
+        return {"error": "No API key. Click Settings and add your Gemini API key."}
 
     context_parts = []
     for i, chunk in enumerate(relevant_chunks):
-        short_text = chunk['text'][:350].strip()
+        short_text = chunk["text"][:350].strip()
         context_parts.append(f"[Source {i+1}: {chunk['file']}, Page {chunk['page']}]\n{short_text}")
     context = "\n\n---\n\n".join(context_parts)
 
+    source_list = "\n".join(
+        f"  Source {i+1}: {c['file']}, Page {c['page']}"
+        for i, c in enumerate(relevant_chunks)
+    )
+
     prompt = (
-        "You are an expert audit assistant. The documents below are German audit documents.\n\n"
-        f"QUESTION (in English): {question}\n\n"
-        "RELEVANT DOCUMENT EXCERPTS:\n" + context + "\n\n"
+        "You are an expert ISO 9001 audit assistant.\n\n"
+        f"QUESTION: {question}\n\n"
+        "RELEVANT DOCUMENT EXCERPTS (in German — translate citations to English yourself):\n" + context + "\n\n"
+        f"SOURCES TO CITE (include ALL of these in citations array):\n{source_list}\n\n"
         "Instructions:\n"
-        "- If the documents contain ANY relevant information, provide a comprehensive answer.\n"
-        "- IMPORTANT: Include ALL sources that are relevant, not just one.\n"
-        "- Only cite sources that directly answer the question.\n"
+        "- Answer comprehensively based on the documents.\n"
         "- Only set answer_english to NO_ANSWER_FOUND if documents have zero relevant info.\n"
-        "- Respond ONLY with raw JSON, no markdown, no backticks.\n\n"
-        "JSON structure:\n"
+        "- In answer text, reference as [Source N, p.X].\n"
+        "- Citations array MUST have one entry per source above.\n"
+        "  Copy exact filename and page. Pick the most informative sentence.\n"
+        "  original_german: most informative sentence from the source.\n"
+        "  translated_english: English translation of that sentence. NEVER leave empty.\n"
+        "- Respond ONLY with raw JSON, no markdown.\n\n"
         "{\n"
-        '  "answer_english": "Full answer in English citing [Source N, Page X]",\n'
-        '  "answer_german": "Same answer in formal German",\n'
-        '  "citations": [\n'
-        '    {\n'
-        '      "source_num": 1,\n'
-        '      "file": "exact filename.pdf",\n'
-        '      "page": 1,\n'
-        '      "original_german": "brief 10-word German excerpt only",\n'
-        '      "translated_english": "English translation"\n'
-        '    }\n'
-        '  ],\n'
+        '  "answer_english": "...",\n'
+        '  "answer_german": "...",\n'
+        '  "citations": [{"source_num":1,"file":"...","page":1,"original_german":"...","translated_english":"..."}],\n'
         '  "confidence": "high"\n'
         "}"
     )
 
     payload = json.dumps({
-        "model": GROQ_MODEL,
+        "model": GEMINI_MODEL,
         "messages": [
             {"role": "system", "content": "You are an audit assistant. Respond only with valid JSON. No markdown, no backticks."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0,
-        "seed": 42,
-        "max_tokens": 2500,
+        "max_tokens": 6000,
+        "reasoning_effort": "none",  # don't let 'thinking' eat the output budget (truncated answers)
     }).encode("utf-8")
 
     try:
+        import time
         req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
+            GEMINI_URL,
             data=payload,
             headers={
                 "Content-Type": "application/json",
@@ -309,8 +334,20 @@ def ask_llm(question, relevant_chunks):
             },
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        # Retry transient server overloads (503/500/502) — Gemini "high demand" spikes
+        data = None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code in (500, 502, 503) and attempt < 3:
+                    wait = 2 * (attempt + 1)
+                    print(f"  Gemini {e.code} (overloaded), retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise
         raw = data["choices"][0]["message"]["content"].strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
         start = raw.find('{')
@@ -370,9 +407,10 @@ def find_pdf(fname):
     return None
 
 # ── HTTP Server ───────────────────────────────────────────────────────────────
-INDEX     = []
-CHUNK_TFS = []
-IDF       = {}
+INDEX      = []
+EMBEDDINGS = None
+IDF        = {}     # 8-char stem -> inverse document frequency (term distinctiveness)
+IDF_MAX    = 4.0    # weight for a stem unseen in the corpus (treated as very rare)
 REINDEX_LOCK = threading.Lock()
 
 class Handler(BaseHTTPRequestHandler):
@@ -406,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        global INDEX, CHUNK_TFS, IDF
+        global INDEX, EMBEDDINGS, IDF, IDF_MAX
         path = urllib.parse.unquote(urlparse_path(self.path))
 
         if path in ("/", "/index.html"):
@@ -434,15 +472,18 @@ class Handler(BaseHTTPRequestHandler):
             with REINDEX_LOCK:
                 if os.path.exists(INDEX_FILE):
                     os.remove(INDEX_FILE)
+                if os.path.exists(EMB_FILE):
+                    os.remove(EMB_FILE)
                 INDEX = build_index()
                 if INDEX:
-                    CHUNK_TFS, IDF = build_tfidf(INDEX)
+                    EMBEDDINGS = build_embeddings(INDEX)
+                    IDF, IDF_MAX = build_idf(INDEX)
             self.send_json({"ok": True, "chunks": len(INDEX)})
         else:
             self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        global INDEX, CHUNK_TFS, IDF
+        global INDEX, EMBEDDINGS
         path = urlparse_path(self.path)
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length)) if length else {}
@@ -453,56 +494,153 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "No question provided"}, 400)
             if not INDEX:
                 return self.send_json({"error": "No documents indexed. Click Re-index PDFs."}, 400)
+            # Expand abbreviations/terse queries with the LLM's world knowledge
+            # (e.g. 'MSL' -> 'Moisture Sensitivity Level, dry storage of ICs'), then
+            # run hybrid semantic search. The multilingual model matches the expanded
+            # English query directly against the German document vectors.
             api_key = get_api_key()
-            german_keywords = expand_query_to_keywords(question, api_key)
-            print(f"Query: '{question}' → Keywords: '{german_keywords}'")
-            combined_query = question + " " + german_keywords
-            relevant = search(combined_query, INDEX, CHUNK_TFS, IDF)
+            # Only spend a Gemini call to expand terse/acronym queries (e.g. 'msl').
+            # Full-sentence questions already retrieve well without expansion, so we
+            # skip the extra call and save daily quota.
+            if len(question.split()) <= 4:
+                search_query = expand_query(question, api_key)
+                print(f"Query: '{question}'  →  expanded: '{search_query}'")
+            else:
+                search_query = question
+                print(f"Query: '{question}'")
+            relevant = search(search_query, INDEX, EMBEDDINGS, top_k=40)
             if not relevant:
                 return self.send_json({"error": "No relevant content found."})
-            result = ask_llm(question, relevant)
-            result["chunks_used"] = len(relevant)
 
-            # Determine which files to show as sources.
-            # Strategy: rank files by their highest-scoring chunk, then walk down
-            # the list stopping when a consecutive file drops >20% from the prior.
-            # Cap at 3 unique files — audit queries rarely have more than 3 true sources.
+            # ── File selection ──────────────────────────────────────────────────
+            # Pick the top 3 highest-scoring distinct documents (a question can
+            # legitimately be answered by more than one document).
+            def _doc_num(fname):
+                m = re.match(r'^([A-Za-z]{2}\s*\d+)', fname)
+                return m.group(1).lower().replace(' ', '') if m else fname[:15].lower()
+
             best_per_file = {}
             for chunk in relevant:
                 fname = chunk["file"]
                 if fname not in best_per_file or chunk["_score"] > best_per_file[fname]["_score"]:
                     best_per_file[fname] = chunk
             sorted_files = sorted(best_per_file.values(), key=lambda c: c["_score"], reverse=True)
-
-            # Always show at least 2 documents (the top-2 are almost always both relevant).
-            # From position 3 onward, stop if the next file drops >20% from the previous.
-            selected_files = [f["file"] for f in sorted_files[:min(2, len(sorted_files))]]
-            for i in range(2, min(len(sorted_files), 5)):
-                prev_score = sorted_files[i-1]["_score"]
-                curr_score = sorted_files[i]["_score"]
-                if curr_score / prev_score < 0.80:
-                    break
-                selected_files.append(sorted_files[i]["file"])
-
+            seen_nums = {}
+            deduped = []
+            for c in sorted_files:
+                dn = _doc_num(c["file"])
+                if dn not in seen_nums:
+                    seen_nums[dn] = True
+                    deduped.append(c)
+            # Keep only documents competitive with the best match: if one document
+            # clearly dominates (big score gap) we show just it; if several are close
+            # (ambiguous query) we show up to 3. Avoids padding clear answers with noise.
+            if deduped:
+                top_score = deduped[0]["_score"]
+                selected_files = [c["file"] for c in deduped[:3]
+                                  if c["_score"] >= top_score - 0.05][:3]
+            else:
+                selected_files = []
             selected_set = set(selected_files)
-            print(f"  Scores: " + " | ".join(f"{c['_score']:.0f} {c['file'][:25]}" for c in sorted_files[:4]))
-            print(f"  Selected files: {[f[:30] for f in selected_files]}")
+            print(f"  Top scores: " + " | ".join(f"{c['_score']:.0f} {c['file'][:30]}" for c in sorted_files[:4]))
+            print(f"  Selected: {[f[:45] for f in selected_files]}")
 
-            # Build final citations: one entry per unique (file, page) in selected files,
-            # enriched with LLM translations where the LLM happened to cite that page.
+            llm_chunks = [c for c in relevant if c["file"] in selected_set][:10]
+            result = ask_llm(question, llm_chunks)
+            result["chunks_used"] = len(llm_chunks)
+
+            # ── Citation building ──────────────────────────────────────────────
+            # Strategy:
+            #  Pass 0 — pages mentioned inline in the answer text [filename, p.X]
+            #            (the LLM gets these right in prose even when JSON is wrong)
+            #  Pass 1 — pages from the LLM citations JSON
+            #  Pass 2 — TF-IDF top pages to fill remaining slots (max 2 per file)
             llm_cit_map = {
                 f"{c.get('file','')}|{c.get('page','')}": c
                 for c in result.get("citations", [])
             }
             seen_fp = set()
+            pages_per_file = {}
             final_cits = []
+
+            # Build a lookup: (file, page) → chunk, for fast access
+            relevant_chunk_map = {}
             for chunk in relevant:
-                if chunk["file"] not in selected_set:
+                key = (chunk["file"], chunk["page"])
+                if key not in relevant_chunk_map:
+                    relevant_chunk_map[key] = chunk
+
+            # Map "Source N" numbers back to filenames (LLM sometimes uses [Source N, p.X])
+            source_num_to_file = {i+1: c["file"] for i, c in enumerate(llm_chunks)}
+
+            def _add_pass0(fname, page):
+                ckey = f"{fname}|{page}"
+                if ckey in seen_fp or pages_per_file.get(fname, 0) >= 2:
+                    return
+                chunk = relevant_chunk_map.get((fname, page))
+                if not chunk:
+                    return
+                seen_fp.add(ckey)
+                pages_per_file[fname] = pages_per_file.get(fname, 0) + 1
+                c = dict(llm_cit_map.get(ckey, {}))
+                c["source_num"] = len(final_cits) + 1
+                c["file"] = fname
+                c["page"] = page
+                if not c.get("original_german"):
+                    c["original_german"] = chunk["text"][:80].strip()
+                if not c.get("translated_english"):
+                    c["translated_english"] = chunk["text"][:80].strip()
+                final_cits.append(c)
+
+            # Pass 0: pages mentioned in answer text — handles both formats:
+            #   [filename, p.X]  and  [Source N, p.X] / [Source N, Page X]
+            answer_text = (result.get("answer_english","") + " " + result.get("answer_german",""))
+            # Format A: [filename fragment, p.X]
+            for m in re.finditer(r'\[([A-Z]{2}[^,\]]{3,60}),\s*p(?:age)?\.?\s*(\d+)\]', answer_text, re.IGNORECASE):
+                partial = m.group(1).strip()
+                page = int(m.group(2))
+                for fname in selected_set:
+                    if partial[:12].lower() in fname.lower():
+                        _add_pass0(fname, page)
+                        break
+            # Format B: [Source N, p.X] or [Source N, Page X]
+            for m in re.finditer(r'\[Source\s+(\d+)[,\s]+[Pp](?:age)?\.?\s*(\d+)\]', answer_text):
+                src_n = int(m.group(1))
+                page = int(m.group(2))
+                fname = source_num_to_file.get(src_n)
+                if fname and fname in selected_set:
+                    _add_pass0(fname, page)
+
+            # Pass 1: LLM-cited pages (correct specific pages)
+            for c in result.get("citations", []):
+                fname = c.get("file", "")
+                if fname not in selected_set:
                     continue
-                key = f"{chunk['file']}|{chunk['page']}"
+                if pages_per_file.get(fname, 0) >= 2:
+                    continue
+                key = f"{fname}|{c.get('page', '')}"
                 if key in seen_fp:
                     continue
                 seen_fp.add(key)
+                pages_per_file[fname] = pages_per_file.get(fname, 0) + 1
+                c2 = dict(c)
+                c2["source_num"] = len(final_cits) + 1
+                if not c2.get("translated_english"):
+                    c2["translated_english"] = "[Translation not available for this page]"
+                final_cits.append(c2)
+
+            # Pass 2: fill remaining slots with TF-IDF top pages
+            for chunk in relevant:
+                fname = chunk["file"]
+                if fname not in selected_set:
+                    continue
+                if pages_per_file.get(fname, 0) >= 2:
+                    continue
+                key = f"{fname}|{chunk['page']}"
+                if key in seen_fp:
+                    continue
+                seen_fp.add(key)
+                pages_per_file[fname] = pages_per_file.get(fname, 0) + 1
                 if key in llm_cit_map:
                     c = dict(llm_cit_map[key])
                     c["source_num"] = len(final_cits) + 1
@@ -513,7 +651,7 @@ class Handler(BaseHTTPRequestHandler):
                         "file": chunk["file"],
                         "page": chunk["page"],
                         "original_german": chunk["text"][:80].strip(),
-                        "translated_english": ""
+                        "translated_english": "[Translation not available for this page]"
                     })
             result["citations"] = final_cits
             self.send_json(result)
@@ -532,11 +670,12 @@ def urlparse_path(full_path):
     return full_path.split('?')[0]
 
 def main():
-    global INDEX, CHUNK_TFS, IDF
+    global INDEX, EMBEDDINGS, IDF, IDF_MAX
     os.makedirs(PDF_DIR, exist_ok=True)
     INDEX = load_index()
     if INDEX:
-        CHUNK_TFS, IDF = build_tfidf(INDEX)
+        EMBEDDINGS = load_embeddings(INDEX)
+        IDF, IDF_MAX = build_idf(INDEX)
     else:
         print(f"No index. Add PDFs to '{PDF_DIR}/' and click Re-index.")
     print(f"\n✅ Server running → open http://localhost:{PORT}\n")
