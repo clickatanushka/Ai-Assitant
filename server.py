@@ -449,8 +449,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             self.send_file("index.html", "text/html; charset=utf-8")
-        elif path == "/dashboard.html":
-            self.send_file("dashboard.html", "text/html; charset=utf-8")
+        elif path.endswith(".html"):
+            # Serve any local .html page (dashboard.html, operations2.html, sales.html …)
+            fname = path.lstrip("/")
+            if ".." not in fname and os.path.exists(fname):
+                self.send_file(fname, "text/html; charset=utf-8")
+            else:
+                self.send_response(404); self.end_headers()
         elif path.startswith("/pdf/"):
             try:
                 pdf_id = int(path[5:])

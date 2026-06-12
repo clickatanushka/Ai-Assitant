@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISO 9001 — Process Monitoring Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --ink: #0d0d0d;
+  --ink2: #2a2a2a;
+  --muted: #6b6b6b;
+  --faint: #e8e4de;
+  --paper: #f5f2ec;
+  --white: #fefefe;
+  --green: #1a6b3c;
+  --green-lt: #e8f5ee;
+  --red: #b91c1c;
+  --red-lt: #fef2f2;
+  --amber: #b45309;
+  --amber-lt: #fffbeb;
+  --blue: #1d4ed8;
+  --blue-lt: #eff6ff;
+  --line: rgba(13,13,13,0.08);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.header {
+  background: var(--ink);
+  color: var(--white);
+  padding: 32px 48px 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.header-left h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 2.2rem;
+  line-height: 1.1;
+  font-weight: 400;
+  letter-spacing: -0.5px;
+}
+.header-left h1 em { font-style: italic; color: #c8b97a; }
+.header-sub {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 8px;
+}
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.header-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 2px;
+  color: rgba(255,255,255,0.6);
+}
+.header-year {
+  font-family: 'DM Mono', monospace;
+  font-size: 28px;
+  font-weight: 500;
+  color: #c8b97a;
+  line-height: 1;
+}
+
+/* ── Nav ── */
+.nav { background: #1e1e1e; display: flex; gap: 4px; padding: 0 48px; }
+.nav a { color: rgba(255,255,255,0.55); text-decoration: none; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 14px 20px; border-bottom: 2px solid transparent; }
+.nav a:hover { color: #fff; }
+.nav a.active { color: #fff; border-bottom-color: #c8b97a; }
+
+/* ── Summary Strip ── */
+.summary-strip {
+  background: var(--white);
+  border-bottom: 1px solid var(--faint);
+  padding: 16px 48px;
+  display: flex;
+  gap: 40px;
+  overflow-x: auto;
+}
+.summary-item { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.summary-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.summary-dot.green { background: var(--green); }
+.summary-dot.red { background: var(--red); }
+.summary-dot.amber { background: var(--amber); }
+.summary-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.summary-val { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; color: var(--ink); }
+
+/* ── Main Grid ── */
+.main { padding: 36px 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+/* ── Card ── */
+.card {
+  background: var(--white);
+  border: 1px solid var(--faint);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: box-shadow .2s;
+}
+.card:hover { box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
+.card.wide { grid-column: span 2; }
+.card.full { grid-column: span 3; }
+
+.card-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--faint);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-metric {
+  margin-top: 4px;
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.7rem;
+  line-height: 1;
+  color: var(--ink);
+}
+.card-unit { font-size: 11px; color: var(--muted); margin-top: 3px; font-weight: 600; font-family: 'Syne', sans-serif; }
+.status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.status-badge.hit { background: var(--green-lt); color: var(--green); }
+.status-badge.miss { background: var(--red-lt); color: var(--red); }
+.status-badge.warn { background: var(--amber-lt); color: var(--amber); }
+.status-badge.na { background: var(--faint); color: var(--muted); }
+
+.card-body { padding: 16px 20px 20px; }
+.card-body canvas { width: 100% !important; max-height: 160px; }
+
+/* ── Target line annotation ── */
+.target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--faint);
+}
+.target-label { font-size: 11px; color: var(--muted); font-weight: 600; }
+.target-val { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; color: var(--ink2); }
+
+/* ── Months axis ── */
+.months-legend {
+  display: flex;
+  gap: 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--faint);
+  padding-top: 6px;
+}
+.month-tick {
+  flex: 1;
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+/* ── Special: Customer Satisfaction gauge ── */
+.gauge-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 0;
+}
+.gauge-inner { position: relative; width: 140px; height: 80px; }
+.gauge-text {
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+.gauge-pct { font-family: 'DM Serif Display', serif; font-size: 2rem; line-height: 1; color: #0d9488; }
+.gauge-sub { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── Footer ── */
+.footer {
+  text-align: center;
+  padding: 24px 48px;
+  border-top: 1px solid var(--faint);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; padding: 20px; }
+  .card.wide, .card.full { grid-column: span 1; }
+  .header, .nav { padding: 20px; }
+  .header { flex-direction: column; align-items: flex-start; }
+  .summary-strip { padding: 12px 20px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-sub">SEPL Process Monitoring</div>
+    <h1>ISO 9001<br><em>Performance Overview</em></h1>
+  </div>
+  <div class="header-right">
+    <div class="header-badge">10-Year Trend</div>
+    <div class="header-year">2016–2025</div>
+  </div>
+</div>
+
+<div class="nav">
+  <a href="dashboard.html">Operations & Quality</a>
+  <a href="operations2.html" class="active">ISO 9001</a>
+  <a href="sales.html">Sales & Marketing</a>
+</div>
+
+<div class="summary-strip">
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Billing avg</div><div class="summary-val">$37.4k/mo</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Booking avg</div><div class="summary-val">$42.3k/mo</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Freight avg</div><div class="summary-val">2.35%</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Cost compliance avg</div><div class="summary-val">91.7%</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">On-time delivery avg</div><div class="summary-val">97.0%</div></div>
+  <div class="summary-item"><div class="summary-dot amber"></div><div class="summary-label">IQC DPPM</div><div class="summary-val">0 (target ≤700)</div></div>
+  <div class="summary-item"><div class="summary-dot red"></div><div class="summary-label">Internal DPPM peak</div><div class="summary-val">1515 (2022)</div></div>
+</div>
+
+<div class="main">
+
+  <!-- 1. Billing -->
+  <div class="card wide">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Billing — Monthly Revenue</div>
+        <div class="card-metric">$37.4k</div>
+        <div class="card-unit">Average · Target ≥ $35k</div>
+      </div>
+      <div class="status-badge hit">✓ On Target</div>
+    </div>
+    <div class="card-body">
+      <canvas id="billingChart"></canvas>
+      <div class="months-legend" id="billingMonths"></div>
+    </div>
+  </div>
+
+  <!-- 2. Customer Satisfaction -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Customer Satisfaction</div>
+        <div class="card-metric">90.5%</div>
+        <div class="card-unit">2025-26 · Target ≥ 90%</div>
+      </div>
+      <div class="status-badge hit">✓ Hit</div>
+    </div>
+    <div class="card-body">
+      <div class="gauge-wrap">
+        <div class="gauge-inner">
+          <canvas id="gaugeChart" width="140" height="80"></canvas>
+          <div class="gauge-text">
+            <div class="gauge-pct">90.5%</div>
+            <div class="gauge-sub">Actual</div>
+          </div>
+        </div>
+      </div>
+      <div class="target-row">
+        <span class="target-label">Target</span>
+        <span class="target-val">≥ 90%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Booking -->
+  <div class="card wide">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Booking — Monthly Orders</div>
+        <div class="card-metric">$42.3k</div>
+        <div class="card-unit">Average · Target ≥ $40k</div>
+      </div>
+      <div class="status-badge hit">✓ On Target</div>
+    </div>
+    <div class="card-body">
+      <canvas id="bookingChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 4. Freight Outward -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Freight Outward %</div>
+        <div class="card-metric">2.35%</div>
+        <div class="card-unit">Average · Target &lt; 3%</div>
+      </div>
+      <div class="status-badge hit">✓ Under Limit</div>
+    </div>
+    <div class="card-body">
+      <canvas id="freightChart"></canvas>
+      <div class="months-legend" id="freightMonths"></div>
+    </div>
+  </div>
+
+  <!-- 5. Project Cost Compliance -->
+  <div class="card wide">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Project Cost Compliance</div>
+        <div class="card-metric">91.7%</div>
+        <div class="card-unit">Average · Target ≥ 90%</div>
+      </div>
+      <div class="status-badge hit">✓ On Target</div>
+    </div>
+    <div class="card-body">
+      <canvas id="costChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 6. On Time Delivery -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">On-Time Delivery</div>
+        <div class="card-metric">97.0%</div>
+        <div class="card-unit">Average · Target ≥ 95%</div>
+      </div>
+      <div class="status-badge hit">✓ On Target</div>
+    </div>
+    <div class="card-body">
+      <canvas id="deliveryChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 7. Internal DPPM -->
+  <div class="card wide">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Internal Rejection DPPM</div>
+        <div class="card-metric">246</div>
+        <div class="card-unit">Average (excl. zeros) · Target ≤ 850</div>
+      </div>
+      <div class="status-badge warn">⚠ 2 Peaks</div>
+    </div>
+    <div class="card-body">
+      <canvas id="internalChart"></canvas>
+      <div class="months-legend" id="internalMonths"></div>
+    </div>
+  </div>
+
+  <!-- 8. Functional Test FPY -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">First Pass Yield — Functional</div>
+        <div class="card-metric">98.8%</div>
+        <div class="card-unit">Average · Target ≥ 98%</div>
+      </div>
+      <div class="status-badge hit">✓ On Target</div>
+    </div>
+    <div class="card-body">
+      <canvas id="fpyChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">ISO 9001 · Process Monitoring Sheet · FY 2025–26 · Confidential</div>
+
+<script>
+const MONTHS = ['2016','2017','2018','2019','2020','2021','2022','2023','2024','2025'];
+const INK = '#0d0d0d';
+const MUTED = '#b0a99e';
+const GREEN = '#1a6b3c';
+const RED = '#b91c1c';
+const AMBER = '#b45309';
+const BLUE = '#1d4ed8';
+const FAINT = '#e8e4de';
+
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 10;
+Chart.defaults.color = MUTED;
+
+function monthLegend(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = MONTHS.map(m => `<div class="month-tick">${m}</div>`).join('');
+}
+
+// Basic bar chart: actual BARS + a line through the peaks + dashed TARGET line.
+function lineChart(id, actuals, target, color, lowerIsBetter=false) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const labels = MONTHS.slice(0, actuals.length);
+  const targetLine = actuals.map(() => target);
+  const ptColors = actuals.map(v => lowerIsBetter ? (v > target ? RED : GREEN) : (v >= target ? GREEN : RED));
+  new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Actual',
+          data: actuals,
+          backgroundColor: color + '40',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 2,
+          order: 3,
+        },
+        {
+          type: 'line',
+          label: 'Actual',
+          data: actuals,
+          borderColor: color,
+          borderWidth: 2,
+          tension: 0.3,
+          fill: false,
+          order: 1,
+          pointRadius: 3,
+          pointBackgroundColor: ptColors,
+          pointBorderColor: 'white',
+          pointBorderWidth: 1,
+        },
+        {
+          type: 'line',
+          label: 'Target',
+          data: targetLine,
+          borderColor: MUTED,
+          borderWidth: 1.5,
+          borderDash: [4,4],
+          pointRadius: 0,
+          fill: false,
+          order: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: INK,
+          titleColor: 'white',
+          bodyColor: '#ccc',
+          padding: 10,
+          cornerRadius: 2,
+          filter: (item) => item.dataset.type !== 'bar',  // hide duplicate bar entry → show Actual + Target only
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { display: false }, border: { display: false } },
+        y: {
+          grid: { color: FAINT, lineWidth: 1 },
+          border: { display: false },
+          ticks: { maxTicksLimit: 4 }
+        }
+      }
+    }
+  });
+}
+
+function barChart(id, actuals, target, lowerIsBetter=false) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const labels = MONTHS.slice(0, actuals.length);
+  const colors = actuals.map(v => {
+    if (lowerIsBetter) return v > target ? RED+'cc' : GREEN+'cc';
+    return v >= target ? GREEN+'cc' : RED+'cc';
+  });
+  const targetLine = actuals.map(() => target);
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Actual',
+          data: actuals,
+          backgroundColor: colors,
+          borderRadius: 2,
+          borderSkipped: false,
+        },
+        {
+          label: 'Target',
+          data: targetLine,
+          type: 'line',
+          borderColor: MUTED,
+          borderWidth: 1.5,
+          borderDash: [4,4],
+          pointRadius: 0,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: INK,
+          titleColor: 'white',
+          bodyColor: '#ccc',
+          padding: 10,
+          cornerRadius: 2,
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { display: false }, border: { display: false } },
+        y: {
+          grid: { color: FAINT },
+          border: { display: false },
+          ticks: { maxTicksLimit: 4 }
+        }
+      }
+    }
+  });
+}
+
+// ── Gauge for Customer Satisfaction ──
+function gaugeChart(id, value, target) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const pct = Math.min(value / 100, 1);
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      datasets: [{
+        data: [pct, 1 - pct],
+        backgroundColor: ['#0d9488', FAINT],
+        borderWidth: 0,
+        circumference: 180,
+        rotation: 270,
+      }]
+    },
+    options: {
+      responsive: false,
+      cutout: '72%',
+      plugins: { legend: { display: false }, tooltip: { enabled: false } }
+    }
+  });
+}
+
+// Horizontal bar chart (bars colored green/red vs target)
+function hbarChart(id, actuals, target, color, lowerIsBetter=false) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const labels = MONTHS.slice(0, actuals.length);
+  const colors = actuals.map(v => lowerIsBetter ? (v > target ? RED+'cc' : GREEN+'cc') : (v >= target ? GREEN+'cc' : RED+'cc'));
+  new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Actual', data: actuals, backgroundColor: colors, borderColor: color, borderWidth: 1, borderRadius: 2 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: INK, padding: 10, cornerRadius: 2 } },
+      scales: {
+        x: { grid: { color: FAINT }, border: { display: false }, ticks: { maxTicksLimit: 4 } },
+        y: { grid: { display: false }, border: { display: false }, ticks: { font: { size: 9 } } }
+      }
+    }
+  });
+}
+
+// Pie / doughnut for a percentage metric: achieved vs gap to 100%
+function donutPct(id, value, color, okLabel, gapLabel, gapColor) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const gap = Math.max(0, 100 - value);
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: [okLabel, gapLabel], datasets: [{ data: [value, gap], backgroundColor: [color, gapColor || '#fca5a5'], borderColor: '#fff', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: true, cutout: '60%',
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, font: { size: 9 }, padding: 10 } },
+        tooltip: { backgroundColor: INK, padding: 10, cornerRadius: 2, callbacks: { label: (c) => `${c.label}: ${c.parsed.toFixed(1)}%` } }
+      }
+    }
+  });
+}
+
+// ── Data (10 years; earlier years 0 where no data existed) ──
+const billing  = [0, 0, 0, 0, 28, 31, 33, 35, 37, 37];
+const booking  = [0, 0, 0, 0, 30, 34, 38, 41, 43, 42];
+const freight  = [0, 0, 0, 0, 3.2, 2.9, 2.6, 2.5, 2.4, 2.35];
+const internal = [0, 0, 0, 0, 0, 1200, 1515, 900, 703, 246];
+
+// ── Render ──
+lineChart('billingChart',  billing,  35, BLUE);  monthLegend('billingMonths');        // vertical bar
+hbarChart('bookingChart',  booking,  40, BLUE);                                        // horizontal bar
+lineChart('freightChart',  freight,  3,  AMBER, true); monthLegend('freightMonths');   // vertical bar
+donutPct('costChart',      91.7, '#0d9488', 'Compliant', 'Over budget', '#fcd34d');    // teal + amber
+donutPct('deliveryChart',  97.0, '#6366f1', 'On-time', 'Late', '#fca5a5');             // indigo + rose
+barChart('internalChart',  internal, 850, true); monthLegend('internalMonths');        // vertical bar
+donutPct('fpyChart',       98.8, '#8b5cf6', 'Pass', 'Fail', '#fca5a5');                // violet + rose
+gaugeChart('gaugeChart', 90.5, 90);
+</script>
+</body>
+</html>

@@ -3,37 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Operations & Quality Command Center</title>
+<title>Sales & Marketing Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{
   --ink:#0d0d0d; --ink2:#2a2a2a; --muted:#6b6b6b; --faint:#e8e4de;
   --paper:#f5f2ec; --white:#fefefe; --green:#1a6b3c; --red:#b91c1c;
-  --amber:#b45309; --blue:#1d4ed8; --navy:#1e3a5f;
+  --amber:#b45309; --blue:#1d4ed8; --plum:#6d28d9;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Syne',sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;}
-.header{background:var(--navy);color:#fff;padding:30px 48px 24px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;}
+.header{background:var(--plum);color:#fff;padding:30px 48px 24px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;}
 .header-left h1{font-family:'DM Serif Display',serif;font-size:2.1rem;line-height:1.1;font-weight:400;}
-.header-left h1 em{font-style:italic;color:#c8b97a;}
+.header-left h1 em{font-style:italic;color:#f0c674;}
 .header-sub{font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.5);margin-bottom:8px;}
 .header-right{text-align:right;}
-.header-year{font-family:'DM Mono',monospace;font-size:26px;color:#c8b97a;}
+.header-year{font-family:'DM Mono',monospace;font-size:26px;color:#f0c674;}
 .header-badge{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,0.6);}
-/* nav */
 .nav{background:var(--ink);display:flex;gap:4px;padding:0 48px;}
 .nav a{color:rgba(255,255,255,0.55);text-decoration:none;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:14px 20px;border-bottom:2px solid transparent;}
 .nav a:hover{color:#fff;}
-.nav a.active{color:#fff;border-bottom-color:#c8b97a;}
-/* summary */
+.nav a.active{color:#fff;border-bottom-color:#f0c674;}
 .summary-strip{background:var(--white);border-bottom:1px solid var(--faint);padding:16px 48px;display:flex;gap:36px;overflow-x:auto;}
 .summary-item{display:flex;align-items:center;gap:10px;white-space:nowrap;}
 .summary-dot{width:10px;height:10px;border-radius:50%;}
 .summary-dot.green{background:var(--green);}.summary-dot.red{background:var(--red);}.summary-dot.amber{background:var(--amber);}
 .summary-label{font-size:12px;font-weight:600;color:var(--muted);}
 .summary-val{font-family:'DM Mono',monospace;font-size:13px;color:var(--ink);}
-/* grid */
 .main{padding:34px 48px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
 .card{background:var(--white);border:1px solid var(--faint);border-radius:4px;overflow:hidden;transition:box-shadow .2s;}
 .card:hover{box-shadow:0 8px 32px rgba(0,0,0,0.08);}
@@ -57,101 +54,96 @@ body{font-family:'Syne',sans-serif;background:var(--paper);color:var(--ink);min-
 <div class="header">
   <div class="header-left">
     <div class="header-sub">Mebatron Elektronik GmbH</div>
-    <h1>Operations & Quality<br><em>Command Center</em></h1>
+    <h1>Sales & Marketing<br><em>Performance Dashboard</em></h1>
   </div>
   <div class="header-right">
-    <div class="header-badge">10-Year Trend</div>
+    <div class="header-badge">10-Year Trend · Sample Data</div>
     <div class="header-year">2016–2025</div>
   </div>
 </div>
 
 <div class="nav">
-  <a href="dashboard.html" class="active">Operations & Quality</a>
+  <a href="dashboard.html">Operations & Quality</a>
   <a href="operations2.html">ISO 9001</a>
-  <a href="sales.html">Sales & Marketing</a>
+  <a href="sales.html" class="active">Sales & Marketing</a>
 </div>
 
 <div class="summary-strip">
-  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Open Projects</div><div class="summary-val">4</div></div>
-  <div class="summary-item"><div class="summary-dot amber"></div><div class="summary-label">Open NCR/CAPA</div><div class="summary-val">1</div></div>
-  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Avg Supplier Score</div><div class="summary-val">90</div></div>
-  <div class="summary-item"><div class="summary-dot amber"></div><div class="summary-label">Audits/Cal Due</div><div class="summary-val">1</div></div>
-  <div class="summary-item"><div class="summary-dot red"></div><div class="summary-label">High Risks</div><div class="summary-val">3</div></div>
-  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Training Complete</div><div class="summary-val">92%</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Revenue</div><div class="summary-val">€4.8M</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">New Leads</div><div class="summary-val">1,240</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Conversion</div><div class="summary-val">24%</div></div>
+  <div class="summary-item"><div class="summary-dot amber"></div><div class="summary-label">CAC</div><div class="summary-val">€310</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Churn</div><div class="summary-val">6%</div></div>
+  <div class="summary-item"><div class="summary-dot green"></div><div class="summary-label">Mkt Spend</div><div class="summary-val">€520k</div></div>
 </div>
 
 <div class="main">
 
   <div class="card wide">
-    <div class="card-header"><div><div class="card-title">Open Projects</div><div class="card-metric">4</div><div class="card-unit">2025 · Target ≤ 5</div></div><div class="status-badge hit">✓ On Target</div></div>
-    <div class="card-body"><canvas id="c_projects"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Revenue (€M)</div><div class="card-metric">4.8</div><div class="card-unit">2025 · Target ≥ 4.0</div></div><div class="status-badge hit">✓ On Target</div></div>
+    <div class="card-body"><canvas id="s_rev"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Project Status</div><div class="card-metric">5</div><div class="card-unit">Open stages</div></div></div>
-    <div class="card-body"><canvas id="c_projstatus"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Sales by Region</div><div class="card-metric">4</div><div class="card-unit">Markets</div></div></div>
+    <div class="card-body"><canvas id="s_region"></canvas></div>
   </div>
 
   <div class="card wide">
-    <div class="card-header"><div><div class="card-title">Open NCR / CAPA</div><div class="card-metric">1</div><div class="card-unit">2025 · Target ≤ 2 (lower better)</div></div><div class="status-badge hit">✓ Under Limit</div></div>
-    <div class="card-body"><canvas id="c_ncr"></canvas></div>
+    <div class="card-header"><div><div class="card-title">New Leads</div><div class="card-metric">1,240</div><div class="card-unit">2025 · Target ≥ 1,000</div></div><div class="status-badge hit">✓ On Target</div></div>
+    <div class="card-body"><canvas id="s_leads"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Risk RAG</div><div class="card-metric">34</div><div class="card-unit">Total risks</div></div></div>
-    <div class="card-body"><canvas id="c_riskrag"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Lead Source</div><div class="card-metric">5</div><div class="card-unit">Channels</div></div></div>
+    <div class="card-body"><canvas id="s_source"></canvas></div>
   </div>
 
   <div class="card wide">
-    <div class="card-header"><div><div class="card-title">Avg Supplier Score</div><div class="card-metric">90</div><div class="card-unit">2025 · Target ≥ 85</div></div><div class="status-badge hit">✓ On Target</div></div>
-    <div class="card-body"><canvas id="c_supplier"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Conversion Rate %</div><div class="card-metric">24%</div><div class="card-unit">2025 · Target ≥ 20%</div></div><div class="status-badge hit">✓ On Target</div></div>
+    <div class="card-body"><canvas id="s_conv"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Quality Status</div><div class="card-metric">18</div><div class="card-unit">Items by state</div></div></div>
-    <div class="card-body"><canvas id="c_quality"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Deals by Stage</div><div class="card-metric">62</div><div class="card-unit">Pipeline</div></div></div>
+    <div class="card-body"><canvas id="s_stage"></canvas></div>
   </div>
 
   <div class="card wide">
-    <div class="card-header"><div><div class="card-title">High Risks</div><div class="card-metric">3</div><div class="card-unit">2025 · Target ≤ 2 (lower better)</div></div><div class="status-badge miss">✗ Above Limit</div></div>
-    <div class="card-body"><canvas id="c_risks"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Customer Acquisition Cost (€)</div><div class="card-metric">310</div><div class="card-unit">2025 · Target ≤ 350 (lower better)</div></div><div class="status-badge hit">✓ Under Limit</div></div>
+    <div class="card-body"><canvas id="s_cac"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Open Tasks by Frequency</div><div class="card-metric">15</div><div class="card-unit">Distribution</div></div></div>
-    <div class="card-body"><canvas id="c_tasks"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Leads by Channel</div><div class="card-metric">1,240</div><div class="card-unit">Distribution</div></div></div>
+    <div class="card-body"><canvas id="s_channel"></canvas></div>
   </div>
 
   <div class="card wide">
-    <div class="card-header"><div><div class="card-title">Training Completion %</div><div class="card-metric">92%</div><div class="card-unit">2025 · Target ≥ 90%</div></div><div class="status-badge hit">✓ On Target</div></div>
-    <div class="card-body"><canvas id="c_training"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Churn Rate %</div><div class="card-metric">6%</div><div class="card-unit">2025 · Target ≤ 8% (lower better)</div></div><div class="status-badge hit">✓ Under Limit</div></div>
+    <div class="card-body"><canvas id="s_churn"></canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-header"><div><div class="card-title">Audits / Calibrations Due</div><div class="card-metric">1</div><div class="card-unit">2025 · Target ≤ 1 (lower better)</div></div><div class="status-badge hit">✓ On Target</div></div>
-    <div class="card-body"><canvas id="c_audit"></canvas></div>
+    <div class="card-header"><div><div class="card-title">Marketing Spend (€k)</div><div class="card-metric">520</div><div class="card-unit">2025 · Budget ≤ 600</div></div><div class="status-badge hit">✓ On Budget</div></div>
+    <div class="card-body"><canvas id="s_spend"></canvas></div>
   </div>
 
 </div>
 
-<div class="footer">Mebatron Elektronik GmbH · Operations & Quality · 10-Year Performance Trend · Confidential</div>
+<div class="footer">Mebatron Elektronik GmbH · Sales & Marketing · 10-Year Trend · Sample Data · Confidential</div>
 
 <script>
 const YEARS=['2016','2017','2018','2019','2020','2021','2022','2023','2024','2025'];
-const INK='#0d0d0d',MUTED='#9a9388',GREEN='#1a6b3c',RED='#b91c1c',AMBER='#b45309',BLUE='#1d4ed8',NAVY='#1e3a5f',FAINT='#e8e4de';
-const PIE=['#1e3a5f','#b45309','#1a6b3c','#7c3aed','#0891b2','#be185d','#65a30d','#9a9388'];
+const INK='#0d0d0d',MUTED='#9a9388',GREEN='#1a6b3c',RED='#b91c1c',AMBER='#b45309',BLUE='#1d4ed8',PLUM='#6d28d9',FAINT='#e8e4de';
+const PIE=['#6d28d9','#1d4ed8','#0891b2','#b45309','#1a6b3c','#be185d','#65a30d','#9a9388'];
 Chart.defaults.font.family="'DM Mono', monospace";
 Chart.defaults.font.size=10;
 Chart.defaults.color=MUTED;
 const ok=(v,t,low)=>low?v<=t:v>=t;
-
-const baseScales={
-  x:{grid:{display:false},border:{display:false},ticks:{font:{size:9}}},
-  y:{grid:{color:FAINT},border:{display:false},ticks:{maxTicksLimit:5}}
-};
+const baseScales={x:{grid:{display:false},border:{display:false},ticks:{font:{size:9}}},y:{grid:{color:FAINT},border:{display:false},ticks:{maxTicksLimit:5}}};
 const baseLegend={display:true,position:'bottom',labels:{boxWidth:10,boxHeight:10,font:{size:9},padding:10,filter:(li,d)=>d.datasets[li.datasetIndex]?.type!=='bar'}};
 
-// Time-series combo: actual BARS + actual LINE through peaks + dashed TARGET line. 10 years, 0 = no data.
 function combo(id,actual,target,color,low=false){
   const ctx=document.getElementById(id); if(!ctx)return;
   new Chart(ctx,{
@@ -165,13 +157,11 @@ function combo(id,actual,target,color,low=false){
       plugins:{legend:baseLegend,tooltip:{backgroundColor:INK,padding:10,cornerRadius:2,filter:(item)=>item.dataset.type!=='bar'}},scales:baseScales}
   });
 }
-// Histogram / bar of categories
 function hist(id,labels,data,color){
   const ctx=document.getElementById(id); if(!ctx)return;
   new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'Count',data,backgroundColor:color+'cc',borderColor:color,borderWidth:1,borderRadius:2}]},
     options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{backgroundColor:INK,padding:10,cornerRadius:2}},scales:baseScales}});
 }
-// Pie / donut
 function pie(id,labels,data,doughnut=true){
   const ctx=document.getElementById(id); if(!ctx)return;
   new Chart(ctx,{type:doughnut?'doughnut':'pie',data:{labels,datasets:[{data,backgroundColor:PIE,borderColor:'#fff',borderWidth:2}]},
@@ -179,18 +169,18 @@ function pie(id,labels,data,doughnut=true){
 }
 
 // ── Sample data (10 years; earlier years 0 where no data existed) ──
-combo('c_projects', [0,0,0,0,2,3,4,5,4,4], 5, BLUE);
-combo('c_ncr',      [0,0,0,1,2,3,2,3,2,1], 2, AMBER, true);
-combo('c_supplier', [0,0,0,0,80,82,85,86,88,90], 85, GREEN);
-combo('c_risks',    [0,0,0,0,0,2,3,2,3,3], 2, RED, true);
-combo('c_training', [0,0,0,0,70,75,80,85,88,92], 90, GREEN);
-combo('c_audit',    [0,0,0,0,0,1,2,1,2,1], 1, NAVY, true);
+combo('s_rev',   [0,0,1.2,1.8,2.1,2.9,3.4,3.9,4.3,4.8], 4.0, PLUM);
+combo('s_leads', [0,0,300,420,510,680,820,960,1100,1240], 1000, BLUE);
+combo('s_conv',  [0,0,12,14,15,18,20,21,23,24], 20, GREEN);
+combo('s_cac',   [0,0,520,480,450,410,380,350,330,310], 350, AMBER, true);
+combo('s_churn', [0,0,14,13,12,10,9,8,7,6], 8, RED, true);
+combo('s_spend', [0,0,180,220,260,320,380,440,490,520], 600, PLUM);
 
-pie('c_projstatus', ['New Request','BOM Check','RFQ/Costing','Offer Sent','Waiting Cust.','Order Recvd','Prod Prep','Done'], [0,1,1,0,1,0,1,1]);
-pie('c_riskrag',    ['Green','Yellow','Red'], [25,6,3]);
+pie('s_region', ['DACH','EU-West','Nordics','Other'], [48,27,15,10]);
+pie('s_source', ['Referral','Web','Trade Fair','Email','Partner'], [30,28,18,14,10]);
 
-hist('c_quality', ['Open','In Progress','Waiting','Closed','Overdue'], [4,3,2,8,1], NAVY);
-hist('c_tasks',   ['Daily','Weekly','Monthly','Yearly','Overdue'], [5,4,3,2,1], BLUE);
+hist('s_stage',   ['Lead','Qualified','Proposal','Negotiation','Won'], [22,16,12,7,5], PLUM);
+hist('s_channel', ['Referral','Web','Trade Fair','Email','Partner'], [372,347,223,174,124], BLUE);
 </script>
 </body>
 </html>
