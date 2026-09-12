@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Assistant — Project Learning Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#2a2320; --muted:#7a716a; --rule:#e3d9c9; --paper:#fbf7f0;
+  --cream:#f3ecdf; --code:#f6efe2; --brick:#a8431f; --olive:#5b6b3a;
+  --blue:#2d5d8a; --green:#3f6b3a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Syne',sans-serif;background:var(--paper);color:var(--ink);line-height:1.6;}
+.wrap{max-width:820px;margin:0 auto;padding:56px 32px 80px;}
+h1{font-family:'DM Serif Display',serif;font-size:2.6rem;color:var(--brick);line-height:1.1;margin-bottom:14px;}
+.lead{color:var(--muted);font-size:1.05rem;margin-bottom:8px;}
+h2{font-family:'DM Serif Display',serif;font-size:1.5rem;margin:46px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--rule);}
+h3{font-size:1rem;font-weight:700;color:var(--brick);margin:26px 0 8px;letter-spacing:.3px;}
+p{margin:10px 0;}
+ul{margin:10px 0 10px 22px;}
+li{margin:5px 0;}
+code{font-family:'DM Mono',monospace;font-size:.86em;background:var(--code);padding:1px 6px;border-radius:3px;color:var(--brick);}
+pre{font-family:'DM Mono',monospace;font-size:.82rem;background:var(--code);border-left:3px solid var(--brick);padding:16px 18px;border-radius:4px;overflow-x:auto;margin:12px 0;line-height:1.5;color:#3a322c;}
+pre.out{border-left-color:var(--olive);background:#f0f3e8;}
+.tag{display:inline-block;font-family:'DM Mono',monospace;font-size:.7rem;font-weight:500;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:3px;margin-bottom:6px;}
+.tag.code{background:#efe3cf;color:var(--brick);}
+.tag.out{background:#e2ebd6;color:var(--olive);}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.92rem;}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top;}
+th{background:var(--cream);font-size:.78rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
+.box{background:#f0f3e8;border:1px solid #d6e0c6;border-left:4px solid var(--olive);border-radius:4px;padding:14px 18px;margin:18px 0;}
+.box.warn{background:#fbeee6;border-color:#e8c3aa;border-left-color:var(--brick);}
+.box b{color:var(--ink);}
+.foot{margin-top:54px;padding-top:18px;border-top:1px solid var(--rule);color:var(--muted);font-size:.82rem;text-align:center;}
+.flow{font-family:'DM Mono',monospace;font-size:.8rem;background:var(--cream);border-radius:4px;padding:14px 18px;margin:12px 0;color:var(--ink);}
+figure{margin:18px 0;}
+figure img{width:100%;border:1px solid var(--rule);border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,.08);display:block;}
+figcaption{font-size:.8rem;color:var(--muted);font-style:italic;margin-top:8px;text-align:center;}
+.legend{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px 18px;}
+.legend li{display:flex;align-items:center;gap:7px;font-size:.85rem;margin:0;}
+.legend .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--brick);color:#fff;font-family:'DM Mono',monospace;font-size:.72rem;font-weight:500;display:flex;align-items:center;justify-content:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Audit Assistant — Project Learning Guide</h1>
+<p class="lead">A short, practical tour of how your document Q&amp;A app is built — what each file does, how a question turns into an answer, and how to change things yourself.</p>
+
+<h2>1. The big picture: what it does</h2>
+<p>You give it <b>82 German audit PDFs</b>. You ask a question <b>in English</b>. It finds the right document, then writes an answer in both English and German with the exact page it came from.</p>
+<figure>
+  <img src="images/app.png" alt="The Audit Assistant app">
+  <ul class="legend">
+    <li><span class="n">1</span> Indexed status — how many PDFs &amp; chunks are loaded</li>
+    <li><span class="n">2</span> The question box (type in English)</li>
+    <li><span class="n">3</span> Ask button → runs the 5-step flow</li>
+  </ul>
+  <figcaption>The app at <code>localhost:8000</code> — real screenshot.</figcaption>
+</figure>
+<p>It is built from three kinds of pieces, each with one job:</p>
+<table>
+<tr><th>Piece</th><th>File</th><th>Its job</th><th>House analogy</th></tr>
+<tr><td>Backend</td><td><code>server.py</code></td><td>The brain — reads PDFs, searches, talks to the AI, serves pages.</td><td>The engine room</td></tr>
+<tr><td>Frontend</td><td><code>index.html</code></td><td>The page you type your question into and read the answer on.</td><td>The reception desk</td></tr>
+<tr><td>Search data</td><td><code>index.json</code> + <code>embeddings.npy</code></td><td>The pre-chewed documents the search reads (built once).</td><td>The filing cabinet</td></tr>
+</table>
+
+<h2>2. The project folder</h2>
+<pre>audit_system/
+├── server.py          ← the whole backend (read PDFs, search, answer)
+├── index.html         ← the question &amp; answer page
+├── dashboard.html     ← Operations &amp; Quality dashboard
+├── operations2.html   ← ISO 9001 dashboard
+├── sales.html         ← Sales &amp; Marketing dashboard
+├── api_key.txt        ← your Gemini API key (one line)
+├── pdfs/              ← the 82 audit documents
+├── index.json         ← every PDF chopped into text chunks (built once)
+└── embeddings.npy     ← each chunk turned into numbers for search (built once)</pre>
+
+<h2>3. How ONE question is answered (the worked example)</h2>
+<p>This is the most important idea: a single question flows through <b>five steps</b> inside <code>server.py</code>. Let's follow the question <code>"msl"</code>.</p>
+<div class="flow">your question → <b>1</b> expand → <b>2</b> translate → <b>3</b> embed &amp; search → <b>4</b> ask Gemini → answer + sources</div>
+<figure>
+  <img src="images/code.png" alt="The 5-step flow in server.py">
+  <figcaption>The whole flow in <code>server.py</code> — each labelled STEP is explained below.</figcaption>
+</figure>
+
+<h3>Step 1 — Expand short queries (so the search understands them)</h3>
+<p>"msl" is just 3 letters. The AI expands it into real words using general knowledge — <i>not</i> from your documents. The result is cached, so the same question always gives the same answer.</p>
+<div class="tag code">code · expand_query()</div>
+<pre>def expand_query(question, api_key):
+    # 'msl' -> 'Moisture Sensitivity Level, dry storage of ICs ...'
+    if key in _EXPANSION_CACHE:
+        return _EXPANSION_CACHE[key]      # same question = same result
+    ...
+    result = f"{question}. {expanded}"
+    _EXPANSION_CACHE[key] = result
+    return result</pre>
+<div class="tag out">output</div>
+<pre class="out">"msl"  →  "msl. Moisture Sensitivity Level (MSL) for electronic
+          components, indicating packaging and handling requirements"</pre>
+
+<h3>Step 2 — Translate to German (for the title match)</h3>
+<p>The documents are German. We translate the query to German (free Google Translate) so we can also match document <i>titles</i>.</p>
+<div class="tag code">code · translate_to_german()</div>
+<pre>def translate_to_german(text):
+    return GoogleTranslator(source='en', target='de').translate(text)</pre>
+
+<h3>Step 3 — Embed &amp; search (the heart of it)</h3>
+<p>Every chunk of every PDF was turned into a list of numbers (an "embedding") that captures its <i>meaning</i>. We do the same to the query, then find the chunks whose numbers are closest. A small bonus is added when a distinctive German word appears in the filename.</p>
+<div class="tag code">code · search()</div>
+<pre>def search(query, chunks, embeddings, top_k=TOP_K):
+    qv = model.encode([query], normalize_embeddings=True)   # query → numbers
+    scores = embeddings @ qv                                # closeness to every chunk
+    # small bonus if a rare German keyword is in the filename (capped)
+    ...
+    return result   # the best-matching chunks</pre>
+<div class="tag out">output · top documents for "msl"</div>
+<pre class="out">  0.81  AA 4905 - Trockenlagerung von ICs.pdf   ← dry storage of ICs ✓
+  0.59  AA 6803 - Einschweißen in Folienbeutel.pdf
+  0.55  PB 3101 - Qualitätsdienste Messmittel ...</pre>
+
+<h3>Step 4 — Ask Gemini to write the answer</h3>
+<p>We hand the best chunks to the AI and ask for an answer in English + German, with citations.</p>
+<div class="tag code">code · ask_llm()</div>
+<pre>prompt = (
+  "You are an expert ISO 9001 audit assistant.\n"
+  f"QUESTION: {question}\n"
+  "RELEVANT DOCUMENT EXCERPTS (in German):\n" + context + ...
+)
+data = _call_gemini(payload, api_key)   # → answer_english, answer_german, citations</pre>
+<figure>
+  <img src="images/output.png" alt="The answer the app shows">
+  <ul class="legend">
+    <li><span class="n">1</span> Your question (here, the acronym "msl")</li>
+    <li><span class="n">2</span> The answer — German &amp; English side by side, with a confidence badge</li>
+    <li><span class="n">3</span> The source document + exact page it came from</li>
+  </ul>
+  <figcaption>What the page shows after Step 4 — real answer card.</figcaption>
+</figure>
+
+<h2>4. The other jobs server.py does</h2>
+<p>Two of these only run <b>once</b> (when you click "Re-index"), the rest run on every question.</p>
+<table>
+<tr><th>Function</th><th>What it does</th><th>When</th></tr>
+<tr><td><code>extract_text_from_pdf()</code></td><td>Pulls the text out of each PDF.</td><td>once (indexing)</td></tr>
+<tr><td><code>chunk_pages()</code></td><td>Chops each page into small overlapping pieces.</td><td>once (indexing)</td></tr>
+<tr><td><code>build_embeddings()</code></td><td>Turns every chunk into numbers and saves them.</td><td>once (indexing)</td></tr>
+<tr><td><code>build_idf()</code></td><td>Learns which German words are rare/distinctive vs common.</td><td>once (indexing)</td></tr>
+<tr><td><code>expand_query / search / ask_llm</code></td><td>The five-step flow above.</td><td>every question</td></tr>
+</table>
+
+<h2>5. The settings you can change (top of server.py)</h2>
+<div class="tag code">code · constants</div>
+<pre>PDF_DIR        = "./pdfs"          # where the documents live
+EMB_MODEL_NAME = "BAAI/bge-m3"     # the search model (understands meaning)
+GEMINI_MODEL   = "gemini-2.5-flash"# the model that writes the answer
+BOOST_CAP      = 0.12              # max title-match bonus (stops noise)
+PORT           = 8000             # open http://localhost:8000</pre>
+
+<h2>6. The one thing you must set up</h2>
+<div class="box warn">
+<b>Your Gemini API key.</b> The file <code>api_key.txt</code> holds one line — your key from
+<code>aistudio.google.com</code>. Billing must be enabled on it (the free tier is only 20 questions/day).
+Without a valid key, the search still finds documents, but no answer can be written.
+</div>
+
+<h2>7. The dashboards (bonus pages)</h2>
+<p>Three standalone pages, linked by the tab bar at the top, built with <b>Chart.js</b>:</p>
+<ul>
+<li><code>dashboard.html</code> — Operations &amp; Quality (bars, pies, histograms, 10-year trends)</li>
+<li><code>operations2.html</code> — ISO 9001 (the original monitoring charts)</li>
+<li><code>sales.html</code> — Sales &amp; Marketing (sample data)</li>
+</ul>
+<figure>
+  <img src="images/dashboard.png" alt="The Operations & Quality dashboard">
+  <ul class="legend">
+    <li><span class="n">1</span> Summary strip — headline numbers</li>
+    <li><span class="n">2</span> Combo chart — Actual bars + peak line + dashed Target line</li>
+    <li><span class="n">3</span> Pie / doughnut for category breakdowns</li>
+  </ul>
+  <figcaption>The Operations &amp; Quality dashboard — real screenshot.</figcaption>
+</figure>
+<p>Each time-series chart shows <b>Actual</b> bars + a line through the peaks + a dashed <b>Target</b> line, over 10 years (missing years filled with 0).</p>
+
+<h2>8. Try it yourself (safe little experiments)</h2>
+<table>
+<tr><th>Change this…</th><th>…and this happens</th></tr>
+<tr><td>Start the server: <code>./venv/bin/python server.py</code></td><td>Open <code>localhost:8000</code> and ask a question</td></tr>
+<tr><td>In <code>server.py</code>, change <code>BOOST_CAP</code> to <code>0.25</code></td><td>Title matches count more (riskier — more noise)</td></tr>
+<tr><td>Drop a new PDF into <code>pdfs/</code> → click <b>Re-index</b></td><td>The new document becomes searchable</td></tr>
+<tr><td>In a dashboard, edit a number in the data arrays</td><td>That bar/line updates on refresh</td></tr>
+</table>
+<div class="box">
+<b>Golden rule:</b> change one small thing, save the file, refresh the browser (or restart the server), and look. That tight loop is how you learn fastest — and you can always undo.
+</div>
+
+<div class="foot">Audit Assistant · German audit document Q&amp;A · semantic search (bge-m3) + Gemini · Learning Guide</div>
+
+</div>
+</body>
+</html>

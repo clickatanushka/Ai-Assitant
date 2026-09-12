@@ -1,0 +1,6 @@
+# Kept in sync with pyproject.toml for tooling that expects it.
+fastapi>=0.115
+pypdf>=5.1
+upstash-vector>=0.6
+upstash-redis>=1.2
+python-multipart>=0.0.9

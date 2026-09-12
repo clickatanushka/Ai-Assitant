@@ -1,2 +1,16 @@
 api_key.txt
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+.vercel/
 
+# Source PDFs live in Vercel Blob once deployed; 167 MB has no business in git.
+pdfs/
+
+# Local transcription cache produced by scripts/bulk_ingest.py --transcribe-only
+data/transcriptions.json
+data_transcribe.log

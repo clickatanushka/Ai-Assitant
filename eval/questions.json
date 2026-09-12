@@ -1,0 +1,118 @@
+{
+  "_comment": [
+    "Retrieval evaluation set. Each question is asked in English; `expect` lists the",
+    "filename fragments that identify a correct source document (a match on any one",
+    "counts). `scanned` marks questions whose answer lives ONLY on pages with no",
+    "extractable text layer — those documents reached the old index solely through",
+    "Tesseract OCR, which mangled them, so they are the sharpest test of the change.",
+    "Run with: python scripts/eval.py"
+  ],
+  "questions": [
+    {
+      "question": "What ESD protection and training measures are required?",
+      "expect": ["AA 0609"],
+      "scanned": true
+    },
+    {
+      "question": "How are crimp connections made?",
+      "expect": ["AA 7402"],
+      "scanned": true
+    },
+    {
+      "question": "What does the 3D AOI test procedure cover?",
+      "expect": ["AA 8102", "AA25.45"],
+      "scanned": true
+    },
+    {
+      "question": "How is measuring equipment maintained and calibrated?",
+      "expect": ["PB 3101", "AA 6206", "AA 0108"],
+      "scanned": true
+    },
+    {
+      "question": "How are cables manufactured and assembled?",
+      "expect": ["PB 2501", "AA 1804"],
+      "scanned": true
+    },
+    {
+      "question": "What is the process for assembly and testing of printed circuit boards?",
+      "expect": ["PB 2302"],
+      "scanned": true
+    },
+    {
+      "question": "How are customer relationships and contracts handled?",
+      "expect": ["PB 2001"],
+      "scanned": true
+    },
+    {
+      "question": "What are the responsibilities of management and how is communication handled?",
+      "expect": ["PB 1001"],
+      "scanned": true
+    },
+    {
+      "question": "How are defects recorded and evaluated in assembly production?",
+      "expect": ["AA 0305"],
+      "scanned": true
+    },
+    {
+      "question": "How are boards sealed into foil bags?",
+      "expect": ["AA 6803"],
+      "scanned": true
+    },
+    {
+      "question": "Which solder pastes are used for leaded soldering?",
+      "expect": ["AA 6003"],
+      "scanned": true
+    },
+    {
+      "question": "How are printed circuit boards coated or lacquered?",
+      "expect": ["AA 7302", "AA 8301"],
+      "scanned": true
+    },
+
+    {
+      "question": "What is the maintenance plan for the MPM SPN screen printing machine?",
+      "expect": ["AA25.04"],
+      "scanned": false
+    },
+    {
+      "question": "What is the maintenance schedule for the SIPLACE F5 HM placement machine?",
+      "expect": ["AA25.12"],
+      "scanned": false
+    },
+    {
+      "question": "MSL",
+      "expect": ["AA 4905"],
+      "scanned": false
+    },
+    {
+      "question": "How is the vapour phase soldering system Asscon VP 1000 maintained?",
+      "expect": ["AA25.24", "AA25.46"],
+      "scanned": false
+    },
+    {
+      "question": "What are the packaging requirements for assemblies?",
+      "expect": ["AA 0506"],
+      "scanned": false
+    },
+    {
+      "question": "How are torque screwdrivers calibrated?",
+      "expect": ["AA 0108"],
+      "scanned": false
+    },
+    {
+      "question": "What are the rules for sampling inspections?",
+      "expect": ["AA 3603"],
+      "scanned": false
+    },
+    {
+      "question": "How are getemed products labelled?",
+      "expect": ["AA 1315", "AA 3317"],
+      "scanned": false
+    }
+  ],
+  "negative_questions": [
+    "What is the company's parental leave policy?",
+    "How do I reset my email password?",
+    "What is the warranty period for consumer laptops?"
+  ]
+}

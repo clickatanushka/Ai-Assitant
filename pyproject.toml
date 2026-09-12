@@ -1,0 +1,15 @@
+[project]
+name = "audit-assistant"
+version = "2.0.0"
+description = "English-in / German-out search over German quality-management PDFs"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "pypdf>=5.1",
+    "upstash-vector>=0.6",
+    "upstash-redis>=1.2",
+    "python-multipart>=0.0.9",
+]
+
+[tool.vercel]
+entrypoint = "app:app"
