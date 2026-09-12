@@ -14,3 +14,4 @@ pdfs/
 # Local transcription cache produced by scripts/bulk_ingest.py --transcribe-only
 data/transcriptions.json
 data_transcribe.log
+transcribe.log

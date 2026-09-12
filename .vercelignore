@@ -1,0 +1,11 @@
+# Never ship these to Vercel: the source PDFs live in Blob, and the local
+# transcription cache is already inside Upstash by deploy time.
+pdfs/
+data/
+.venv/
+venv/
+scripts/
+tests/
+eval/
+*.log
+__pycache__/
