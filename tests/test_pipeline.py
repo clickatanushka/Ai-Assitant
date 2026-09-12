@@ -48,6 +48,9 @@ class FakeIndex:
 
     def upsert(self, vectors):
         for v in vectors:
+            assert len(v.get("vector") or []) == config.EMBED_DIMS, \
+                "upsert must carry a dense vector of the configured width"
+            assert v.get("data"), "upsert must carry text for the BM25 half"
             self.vectors[v["id"]] = v
 
     def delete(self, ids=None, namespace="", prefix=None, filter=None):
@@ -55,9 +58,16 @@ class FakeIndex:
             for key in [k for k in self.vectors if k.startswith(prefix)]:
                 del self.vectors[key]
 
-    def query(self, data, top_k=10, include_metadata=False, fusion_algorithm=None, **kw):
-        """Crude term overlap — enough to check plumbing, not retrieval quality."""
-        terms = {w.lower().strip(".,:;()") for w in data.split() if len(w) > 3}
+    def query(self, data=None, vector=None, top_k=10, include_metadata=False,
+              fusion_algorithm=None, **kw):
+        """Crude term overlap — enough to check plumbing, not retrieval quality.
+
+        `vector` is accepted and ignored: the real index is hybrid with a Custom
+        dense half, and asserting the vector arrives is what matters here.
+        """
+        assert vector is not None and len(vector) == config.EMBED_DIMS, \
+            "query must carry a dense vector of the configured width"
+        terms = {w.lower().strip(".,:;()") for w in (data or "").split() if len(w) > 3}
 
         class R:
             def __init__(self, id, score, metadata):
@@ -117,10 +127,18 @@ def main() -> int:
     store._index, store._redis = fake_index, fake_redis
     config.ADMIN_PASSWORD = "test"
 
-    # Stub the two Gemini entry points ingest uses.
+    # Stub the Gemini entry points ingest and search use.
     pages = {1: PAGE_1, 2: PAGE_2}
     gemini.transcribe_document = lambda pdf, n: dict(pages)
     gemini.transcribe_page = lambda pdf: PAGE_1
+
+    def fake_vector(text: str) -> list[float]:
+        """Deterministic pseudo-embedding — width is what the test checks."""
+        seed = sum(ord(ch) for ch in text[:200]) or 1
+        return [((seed * (i + 7)) % 1000) / 1000.0 for i in range(config.EMBED_DIMS)]
+
+    gemini.embed_documents = lambda texts: [fake_vector(t) for t in texts]
+    gemini.embed_query = fake_vector
 
     print("\ningest")
     doc = ingest.ingest_pdf(make_pdf(2), filename=FILENAME)

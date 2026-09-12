@@ -71,10 +71,17 @@ def _retry_delay(payload: str, default: float) -> float:
 
 
 def _post(body: dict, *, timeout: int = 120, attempts: int = 5) -> dict:
-    """POST to generateContent, rate-limited, retrying 429s and transient 5xxs."""
+    """POST to generateContent on the configured chat model."""
+    return _post_to(f"{config.GEMINI_MODEL}:generateContent", body,
+                    timeout=timeout, attempts=attempts)
+
+
+def _post_to(endpoint: str, body: dict, *, timeout: int = 120,
+             attempts: int = 5) -> dict:
+    """POST to any model endpoint, rate-limited, retrying 429s and transient 5xxs."""
     if not config.GEMINI_API_KEY:
         raise GeminiError("GEMINI_API_KEY is not set")
-    url = f"{config.GEMINI_BASE}/{config.GEMINI_MODEL}:generateContent"
+    url = f"{config.GEMINI_BASE}/{endpoint}"
     data = json.dumps(body).encode("utf-8")
     last = None
     for attempt in range(attempts):
@@ -233,6 +240,46 @@ def transcribe_document(pdf: bytes, n_pages: int) -> dict[int, str]:
         if body and number not in pages:
             pages[number] = body
     return pages
+
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+
+def _embed_one(text: str, task: str) -> list[float]:
+    body = {
+        "content": {"parts": [{"text": text}]},
+        "taskType": task,
+        "outputDimensionality": config.EMBED_DIMS,
+    }
+    response = _post_to(f"{config.EMBED_MODEL}:embedContent", body, timeout=90)
+    return response["embedding"]["values"]
+
+
+def embed_documents(texts: list[str]) -> list[list[float]]:
+    """Vectors for indexing. Batched, because one request per chunk would be
+    hundreds of round trips during a bulk ingest."""
+    out: list[list[float]] = []
+    for start in range(0, len(texts), config.EMBED_BATCH):
+        batch = texts[start:start + config.EMBED_BATCH]
+        body = {"requests": [
+            {"model": f"models/{config.EMBED_MODEL}",
+             "content": {"parts": [{"text": t}]},
+             "taskType": "RETRIEVAL_DOCUMENT",
+             "outputDimensionality": config.EMBED_DIMS}
+            for t in batch
+        ]}
+        response = _post_to(f"{config.EMBED_MODEL}:batchEmbedContents", body, timeout=180)
+        out.extend(e["values"] for e in response["embeddings"])
+    return out
+
+
+def embed_query(text: str) -> list[float]:
+    """Vector for searching.
+
+    RETRIEVAL_QUERY rather than RETRIEVAL_DOCUMENT: the model places questions and
+    the passages that answer them in the same region of the space, which is what
+    makes an English question reach German text at all.
+    """
+    return _embed_one(text, "RETRIEVAL_QUERY")
 
 
 # ── Query preparation ─────────────────────────────────────────────────────────

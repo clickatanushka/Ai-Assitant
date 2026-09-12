@@ -100,9 +100,10 @@ could not see at all.
 1. **Query preparation** — one Gemini call expands acronyms (`MSL` → *Moisture
    Sensitivity Level, dry storage…*) and translates to German. The German variant
    matters: the BM25 half of the index cannot match German text from English tokens.
-2. **Hybrid search** — both variants query Upstash Vector, which runs dense
-   `BAAI/bge-m3` (the same model the old local build used) and BM25 sparse search,
-   fused with reciprocal rank fusion. The two result lists are then fused again.
+2. **Hybrid search** — each variant is embedded with `gemini-embedding-2`
+   (`RETRIEVAL_QUERY` task) and sent to Upstash alongside its raw text, so the dense
+   and BM25 halves both run and Upstash fuses them with RRF. The two result lists
+   are then fused again.
 3. **Rerank** — Gemini scores the top 6 documents 0–10. Anything below 6 is
    discarded, so **"not in these documents" is a real answer** rather than the
    closest unrelated match.
@@ -126,11 +127,22 @@ could not see at all.
 
 Create the Upstash Vector index as a **hybrid** index:
 
-- Dense model: **`BAAI/bge-m3`** (multilingual, 1024 dimensions)
-- Sparse model: **`BM25`**
+| Field | Value |
+|---|---|
+| Type | **Hybrid** |
+| Dense Embedding Model | **Custom** |
+| Dimensions | **1536** |
+| Metric | **COSINE** |
+| Sparse Embedding Model | **BM25** |
 
-Getting the dense model wrong is the one setup mistake that silently degrades
-everything — `bge-m3` is what makes an English question match German text.
+Upstash no longer offers `BAAI/bge-m3` as a hosted model (the console lists only
+*Custom* and `openai/text-embedding-3-small`, and the latter is being deprecated in
+October 2026). So the dense half is computed here with **`gemini-embedding-2`** and
+upserted directly, while the raw text still goes to Upstash for BM25 to index.
+
+Dimensions must be **1536** — it is Upstash's free-tier ceiling, the model truncates
+to it natively, and a mismatch is rejected at upsert. Measured 5/5 on
+English-question → German-document retrieval over this corpus.
 
 ### 2. Environment
 

@@ -26,6 +26,17 @@ GEMINI_BASE  = "https://generativelanguage.googleapis.com/v1beta/models"
 # next to the model name rather than being repeated at each call site.
 THINKING_CONFIG = {"thinkingLevel": "minimal"}
 
+# ── Embeddings ────────────────────────────────────────────────────────────────
+# Upstash no longer offers BAAI/bge-m3 as a hosted model, so dense vectors are
+# computed here and upserted directly; Upstash still runs the BM25 sparse half.
+# gemini-embedding-2 was measured at 5/5 on English-question -> German-document
+# retrieval over this corpus, which is the property the whole system depends on.
+# 1536 dimensions because that is Upstash's free-tier ceiling, and the model
+# supports truncating to it natively.
+EMBED_MODEL = os.environ.get("GEMINI_EMBED_MODEL", "gemini-embedding-2")
+EMBED_DIMS  = 1536
+EMBED_BATCH = 32
+
 # Client-side rate limit. The free tier rejects bursts with a 429 and Google no
 # longer publishes the numbers, so this is enforced here rather than discovered
 # halfway through a bulk ingest. Raise it if the key is on a paid tier.

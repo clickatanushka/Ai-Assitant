@@ -1,9 +1,11 @@
 """Persistence: Upstash Vector for search, Upstash Redis for document text.
 
-Upstash Vector holds a HYBRID index — dense BAAI/bge-m3 (the same model the old
-local build used, so retrieval quality carries over without PyTorch) plus a BM25
-sparse index. Both are hosted, so we upsert and query raw text and never compute
-an embedding ourselves.
+Upstash Vector holds a HYBRID index: a Custom dense half plus Upstash's hosted BM25
+sparse half. Upstash no longer offers BAAI/bge-m3 (the model the old local build
+used), so dense vectors are computed here with gemini-embedding-2 and upserted
+directly, while the raw text still goes along for BM25 to index. Measured 5/5 on
+English-question -> German-document retrieval over this corpus, which is the
+property everything else depends on.
 
 Redis holds the full transcription of every document. Answers are generated from
 complete documents rather than fragments, and citation quotes are verified against
@@ -21,7 +23,7 @@ from upstash_redis import Redis
 from upstash_vector import Index
 from upstash_vector.types import FusionAlgorithm
 
-from . import config
+from . import config, gemini
 
 _index: Index | None = None
 _redis: Redis | None = None
@@ -103,23 +105,32 @@ def delete_document(doc_id: str) -> bool:
 # ── Chunks (Upstash Vector) ───────────────────────────────────────────────────
 
 def upsert_chunks(chunks: list[dict], *, batch_size: int = 50) -> int:
-    """Upsert raw text; Upstash embeds it with the index's hosted models."""
+    """Upsert chunks with dense vectors we compute ourselves.
+
+    The index is hybrid with a Custom dense model, so the vector is supplied here
+    while `data` is still sent for Upstash to build the BM25 sparse side from.
+    Upstash no longer offers BAAI/bge-m3 as a hosted model, which is why the dense
+    half moved to gemini-embedding-2 on our side.
+    """
     if not chunks:
         return 0
     idx = index()
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start:start + batch_size]
+        vectors = gemini.embed_documents([c["embed_text"] for c in batch])
         idx.upsert(vectors=[
-            {"id": c["id"], "data": c["embed_text"], "metadata": c["metadata"]}
-            for c in batch
+            {"id": c["id"], "vector": v, "data": c["embed_text"],
+             "metadata": c["metadata"]}
+            for c, v in zip(batch, vectors)
         ])
     return len(chunks)
 
 
 def search(query: str, *, top_k: int) -> list[dict]:
-    """One hybrid query. Upstash fuses the dense and BM25 halves with RRF."""
+    """One hybrid query: our dense vector plus Upstash's BM25, fused with RRF."""
     results = index().query(
-        data=query,
+        vector=gemini.embed_query(query),
+        data=query,                       # drives the BM25 sparse half
         top_k=top_k,
         include_metadata=True,
         fusion_algorithm=FusionAlgorithm.RRF,
