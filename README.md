@@ -149,6 +149,7 @@ and all of its search entries.
 ## Checking it works
 
 ```bash
+.venv/bin/python tests/test_pipeline.py            # full pipeline, no network needed
 .venv/bin/python scripts/compare_ocr.py            # transcription quality vs. the old OCR
 .venv/bin/python scripts/eval.py                   # retrieval accuracy
 .venv/bin/python scripts/eval.py --scanned         # only the previously-unsearchable documents
@@ -175,6 +176,7 @@ public/index.html       Q&A, Documents and Dashboard tabs
 scripts/bulk_ingest.py  one-time corpus load
 scripts/eval.py         retrieval evaluation
 scripts/compare_ocr.py  old-vs-new transcription quality
+tests/test_pipeline.py  end-to-end test with Gemini and Upstash stubbed
 eval/legacy_index.json  the old Tesseract index, kept as the baseline
 ```
 
