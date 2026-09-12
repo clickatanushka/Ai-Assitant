@@ -8,12 +8,14 @@ Built to be deployed on Vercel, with new PDFs uploadable through the browser.
 
 ---
 
-## ⚠️ Read this first: the Gemini API key needs billing enabled
+## ⚠️ Read this first: the API key must belong to the *billed project*
 
-The key currently in use is on the Gemini **free tier**, which allows
-**20 requests per day** for `gemini-2.5-flash`:
+Gemini keys are scoped to a Google Cloud **project**, and billing is attached to a
+project too. A key from an unbilled project stays on the free tier no matter how
+much credit sits on a different one — it fails like this:
 
 ```
+GenerateRequestsPerMinutePerProjectPerModel-FreeTier
 GenerateRequestsPerDayPerProjectPerModel-FreeTier   limit: 20
 ```
 
@@ -27,11 +29,21 @@ That is not enough to run this system:
 So a free-tier key indexes about a quarter of one day's documents, or answers about
 six questions per day.
 
-**Fix:** open [Google AI Studio](https://aistudio.google.com/apikey), select the
-project, and enable billing to move to a paid tier. The actual spend for this
-workload is small — indexing all 289 pages is roughly 75k input tokens plus the
-transcription output, well under a dollar as a one-off, and a question costs a
-fraction of a cent. Then set `GEMINI_API_KEY` to that key.
+**Fix:** in [Google AI Studio → API Keys](https://aistudio.google.com/apikey), check
+the *project* column and use a key belonging to the project that has billing enabled,
+creating one there if needed. Cost is small — indexing all 289 pages is roughly 95k
+input tokens plus transcription output, about $0.50 one-off, and a question costs
+around half a cent.
+
+**On key format:** current keys start with `AQ.` (Auth keys). Google migrated away
+from the older `AIza` Standard keys during 2026 and now rejects them, so `AQ.` is
+correct — do not go looking for an `AIza` key. One consequence: `AQ.` keys are
+rejected by the OpenAI-compatible endpoint (`/v1beta/openai/chat/completions`), which
+the old `server.py` used. This version calls the native `generateContent` endpoint
+instead, which accepts them.
+
+To confirm a key is actually on the paid tier, send ~10 quick requests: a free-tier
+key returns `...PerMinutePerProjectPerModel-FreeTier` after a handful.
 
 You can raise throughput once on a paid tier:
 
@@ -50,29 +62,40 @@ OCR. Measuring the corpus showed why answers were unreliable:
 - **57 of the 82 files are entirely scanned images**
 - so **62% of the old search index came from Tesseract**
 
-And Tesseract was corrupting the German. Measured across 10 documents:
+And Tesseract was corrupting the German. Measured across the **full 82-document
+corpus**, old index vs. new transcription:
 
 | | Tesseract (old) | Gemini vision (new) |
 |---|---|---|
-| Mangled characters | **325** (34.7 per 1k words) | **0** |
-| — `é` written for `ä`/`ö` | 110 | 0 |
-| — `B` written for `ß` | 56 | 0 |
-| — `ii` written for `ü` | 159 | 0 |
-| Gibberish runs | 4 | 0 |
-| Correct umlauts | 53.4 per 1k words | **109.0 per 1k words** |
+| Pages readable | 107 of 289 | **274** |
+| Mangled characters | **2,137** (24.4 per 1k words) | **8** (0.1 per 1k) |
+| — `é` written for `ä`/`ö` | 682 | **0** |
+| — `B` written for `ß` | 294 | 7 |
+| — `ii` written for `ü` | 1,161 | 1 |
+| Gibberish runs | 31 | **0** |
+| Correct umlauts | 69.2 per 1k words | **96.9 per 1k words** |
+
+That last row is the one that matters for search: Tesseract was silently losing
+about **2,100 umlauts**, roughly a quarter of every one in the corpus.
 
 Tesseract was destroying roughly half of all umlauts. `Schwall-Löten` was indexed
 as `Schwall-Léten`, `Maßnahmen` as `MaBnahmen`, `Qualität` as `Qualitét` — none of
 which match the correct German under either semantic or keyword search.
 
-Reproduce this yourself with `python scripts/compare_ocr.py`.
+Reproduce this yourself with `python scripts/compare_ocr.py --legacy eval/legacy_index.json`.
 
-**Ingestion now goes through Gemini 2.5 Flash vision**, which reads scanned German
+**Ingestion now goes through Gemini 3.6 Flash vision**, which reads scanned German
 correctly, renders tables as Markdown, and transcribes the labels inside the
 process-flow diagrams that make up most of the `PB` documents — content Tesseract
 could not see at all.
 
 ## How a question is answered
+
+> **Model note:** `gemini-2.5-flash` is no longer available to newly created Google
+> Cloud projects — it returns a 404 pointing at `gemini-3.6-flash`. The 3.x line also
+> replaced `thinkingConfig.thinkingBudget: 0` with `thinkingConfig.thinkingLevel:
+> "minimal"`, and rejects the old form. Both live in `audit/config.py`; override the
+> model with the `GEMINI_MODEL` env var.
 
 1. **Query preparation** — one Gemini call expands acronyms (`MSL` → *Moisture
    Sensitivity Level, dry storage…*) and translates to German. The German variant

@@ -129,7 +129,7 @@ def _json_call(prompt: str, schema: dict, *, max_tokens: int = 8000,
             "maxOutputTokens": max_tokens,
             "responseMimeType": "application/json",
             "responseSchema": schema,
-            "thinkingConfig": {"thinkingBudget": 0},
+            "thinkingConfig": config.THINKING_CONFIG,
         },
     }, timeout=timeout)
     raw = _text_of(response).strip()
@@ -198,7 +198,7 @@ def _transcribe(pdf: bytes, prompt: str, *, max_tokens: int) -> str:
         "generationConfig": {
             "temperature": 0,
             "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingBudget": 0},
+            "thinkingConfig": config.THINKING_CONFIG,
         },
     }, timeout=300)
     return _strip_runaway(_text_of(response)).strip()

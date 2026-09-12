@@ -16,8 +16,15 @@ BLOB_TOKEN          = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
 ADMIN_PASSWORD      = os.environ.get("ADMIN_PASSWORD", "")
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 GEMINI_BASE  = "https://generativelanguage.googleapis.com/v1beta/models"
+
+# Thinking is disabled on every call: left on, the model spends the whole output
+# budget reasoning and returns an empty transcription. The parameter changed shape
+# between model generations — 2.5 took {"thinkingBudget": 0}, 3.x takes
+# {"thinkingLevel": "minimal"} and rejects the old form outright — so it lives here
+# next to the model name rather than being repeated at each call site.
+THINKING_CONFIG = {"thinkingLevel": "minimal"}
 
 # Client-side rate limit. The free tier rejects bursts with a 429 and Google no
 # longer publishes the numbers, so this is enforced here rather than discovered
