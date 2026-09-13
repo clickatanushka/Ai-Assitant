@@ -3,7 +3,8 @@
 // backend that is not Python: Vercel Blob's upload handshake must be signed with
 // BLOB_READ_WRITE_TOKEN and only the JS SDK implements it. Python still does all
 // the indexing — it reads the finished blob back over plain HTTPS.
-import { handleUpload, del, type HandleUploadBody } from '@vercel/blob/client';
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { del } from '@vercel/blob';
 
 export const config = { runtime: 'nodejs' };
 

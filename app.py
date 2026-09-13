@@ -9,7 +9,7 @@ import os
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -126,7 +126,13 @@ def api_status():
 
 @app.get("/")
 def root():
-    return FileResponse(os.path.join(PUBLIC_DIR, "index.html"))
+    """Redirect rather than serve the file.
+
+    Vercel serves `public/` as static assets and does not put it in the function
+    bundle, so reading index.html from disk here 500s in production while working
+    fine locally. A redirect is correct in both.
+    """
+    return RedirectResponse("/index.html")
 
 
 @app.exception_handler(HTTPException)
