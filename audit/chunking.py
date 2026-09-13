@@ -33,6 +33,12 @@ def page_to_chunks(text: str, *, doc_id: str, file: str, title: str,
     chunks = []
     for i, group in enumerate(groups):
         body = " ".join(group)
+        metadata_extra = {}
+        if i == 0:
+            # The page's full text rides on its first chunk. Answers are generated
+            # from whole pages and citation quotes are verified against them, so
+            # the text has to survive somewhere that is not an overlapping window.
+            metadata_extra["page_text"] = text.strip()
         chunks.append({
             "id": f"{doc_id}:p{page}:c{i}",
             # The embedded string carries the title and page so a query naming the
@@ -47,6 +53,7 @@ def page_to_chunks(text: str, *, doc_id: str, file: str, title: str,
                 "page": page,
                 "n_pages": n_pages,
                 "text": body,
+                **metadata_extra,
             },
         })
     return chunks

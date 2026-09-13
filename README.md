@@ -195,6 +195,22 @@ should answer them, deliberately weighted toward the scanned files. It also hold
 `negative_questions` that have no answer in the corpus — a system that answers
 those anyway is failing in a way accuracy alone would not show.
 
+Measured over all 82 indexed documents:
+
+| | n | top-1 | top-3 |
+|---|---|---|---|
+| **Scanned sources** (were Tesseract garbage) | 12 | 11/12 — 91.7% | **12/12 — 100%** |
+| Native-text sources | 8 | 6/8 — 75.0% | **8/8 — 100%** |
+| **Overall** | 20 | 17/20 — 85.0% | **20/20 — 100%** |
+
+Questions with no answer in the corpus: **3/3 declined**, none answered from a
+nearest-wrong document.
+
+Top-3 is the number that matters operationally, because up to three documents go
+to the answering step — so the correct document reached the answer every time. The
+documents that used to be unsearchable now score *better* than the ones that always
+had a text layer.
+
 ## Layout
 
 ```

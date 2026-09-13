@@ -10,6 +10,8 @@ the rerank threshold, which lets the system say "not in these documents" instead
 always returning its least-bad guess.
 """
 
+import re
+
 from . import config, gemini, store, verify
 
 
@@ -27,6 +29,47 @@ def _rrf_fuse(result_lists: list[list[dict]], k: int = config.RRF_K) -> list[dic
                 entry = fused[item["id"]] = dict(item, rrf=0.0)
             entry["rrf"] += 1.0 / (k + rank + 1)
     return sorted(fused.values(), key=lambda c: -c["rrf"])
+
+
+# Document numbers (AA 6003, AA25.04-06, PB 2302), machine and part designations
+# (SIPLACE F5 HM, VP 1000-66, SS48 M955). Embeddings are good at meaning and poor
+# at codes like these, and codes are exactly what an auditor types. Upstash would
+# not let us pair a Custom dense model with its hosted BM25, so this stands in for
+# the keyword half of what would have been a hybrid index.
+_CODE = re.compile(r"""
+      \b[A-Z]{2}\s?\d{2}[.\-]?\d{2}(?:[.\-]\d{2})?\b   # AA25.04-06, PB 2302
+    | \b[A-Z]{2}\s?\d{4}\b                              # AA 6003
+    | \b[A-Z][A-Za-z]{2,}\s?\d{2,4}[A-Za-z]*\b           # SIPLACE 20, VP 1000
+    | \b[A-Z]{2,}\d+[A-Z0-9]*\b                          # SS48, M955
+""", re.VERBOSE)
+
+
+def _codes(text: str) -> set[str]:
+    """Normalised codes in a string — spaces and separators stripped, so
+    'AA 25.04' and 'AA25-04' compare equal."""
+    return {
+        re.sub(r"[\s.\-]", "", m.group(0)).upper()
+        for m in _CODE.finditer(text)
+    }
+
+
+def lexical_boost(question: str, documents: list[dict]) -> None:
+    """Promote documents whose title or text contains a code from the question.
+
+    Additive on the RRF score and deliberately small: it reorders documents that
+    were already retrieved rather than dragging in unrelated ones. A title match
+    counts for more than a body match, since the title is what identifies the
+    document.
+    """
+    wanted = _codes(question)
+    if not wanted:
+        return
+    for doc in documents:
+        title_hits = len(wanted & _codes(doc.get("title", "") + " " + doc.get("file", "")))
+        body_hits = len(wanted & _codes(doc.get("excerpt", "")))
+        if title_hits or body_hits:
+            doc["score"] += 0.05 * title_hits + 0.01 * min(body_hits, 3)
+            doc["code_match"] = True
 
 
 def _group_by_document(chunks: list[dict]) -> list[dict]:
@@ -72,7 +115,10 @@ def retrieve(question: str) -> dict:
     if not any(searches):
         return {"query": prepared, "candidates": [], "selected": [], "scores": {}}
 
-    candidates = _group_by_document(_rrf_fuse(searches))[:config.RERANK_CANDIDATES]
+    candidates = _group_by_document(_rrf_fuse(searches))
+    lexical_boost(question, candidates)
+    candidates.sort(key=lambda d: -d["score"])
+    candidates = candidates[:config.RERANK_CANDIDATES]
     scores = gemini.rerank(question, candidates)
 
     for doc in candidates:

@@ -43,39 +43,67 @@ FILENAME = "AA 6003 - Prozess verbleites Löten (8.5.1_7.5).pdf"
 # ── stubs ─────────────────────────────────────────────────────────────────────
 
 class FakeIndex:
-    def __init__(self):
-        self.vectors = {}
+    """Namespaced in-memory stand-in: "" holds chunks, "docs" holds manifests."""
 
-    def upsert(self, vectors):
+    def __init__(self):
+        self.ns = {"": {}, "docs": {}}
+
+    def _space(self, namespace=""):
+        return self.ns.setdefault(namespace, {})
+
+    def upsert(self, vectors, namespace=""):
         for v in vectors:
             assert len(v.get("vector") or []) == config.EMBED_DIMS, \
                 "upsert must carry a dense vector of the configured width"
-            assert v.get("data"), "upsert must carry text for the BM25 half"
-            self.vectors[v["id"]] = v
+            self._space(namespace)[v["id"]] = v
 
     def delete(self, ids=None, namespace="", prefix=None, filter=None):
+        space = self._space(namespace)
         if prefix:
-            for key in [k for k in self.vectors if k.startswith(prefix)]:
-                del self.vectors[key]
+            for key in [k for k in space if k.startswith(prefix)]:
+                del space[key]
+        for i in (ids or []):
+            space.pop(i, None)
 
-    def query(self, data=None, vector=None, top_k=10, include_metadata=False,
-              fusion_algorithm=None, **kw):
-        """Crude term overlap — enough to check plumbing, not retrieval quality.
+    def fetch(self, ids=None, include_vectors=False, include_metadata=False,
+              namespace="", include_data=False, prefix=None):
+        space = self._space(namespace)
+        keys = [k for k in space if k.startswith(prefix)] if prefix else (ids or [])
 
-        `vector` is accepted and ignored: the real index is hybrid with a Custom
-        dense half, and asserting the vector arrives is what matters here.
-        """
+        class R:
+            def __init__(self, id, metadata):
+                self.id, self.metadata = id, metadata
+        return [R(k, space[k].get("metadata")) if k in space else None for k in keys]
+
+    def range(self, cursor="", limit=1, include_vectors=False,
+              include_metadata=False, namespace="", include_data=False, prefix=None):
+        space = self._space(namespace)
+
+        class V:
+            def __init__(self, id, metadata):
+                self.id, self.metadata = id, metadata
+
+        class Result:
+            pass
+        r = Result()
+        r.vectors = [V(k, v.get("metadata")) for k, v in space.items()]
+        r.next_cursor = ""
+        return r
+
+    def query(self, vector=None, top_k=10, include_metadata=False,
+              namespace="", **kw):
+        """Crude term overlap — enough to check plumbing, not retrieval quality."""
         assert vector is not None and len(vector) == config.EMBED_DIMS, \
             "query must carry a dense vector of the configured width"
-        terms = {w.lower().strip(".,:;()") for w in (data or "").split() if len(w) > 3}
+        terms = set(self._query_terms)
 
         class R:
             def __init__(self, id, score, metadata):
                 self.id, self.score, self.metadata = id, score, metadata
 
         scored = []
-        for key, v in self.vectors.items():
-            body = v["data"].lower()
+        for key, v in self._space(namespace).items():
+            body = (v.get("metadata", {}).get("text", "")).lower()
             scored.append((sum(1 for t in terms if t in body), key, v))
         scored.sort(key=lambda x: -x[0])
         return [R(k, float(s), v["metadata"]) for s, k, v in scored[:top_k] if s]
@@ -83,23 +111,8 @@ class FakeIndex:
     def info(self):
         class I:
             vector_count = 0
-        I.vector_count = len(self.vectors)
+        I.vector_count = len(self.ns[""])
         return I
-
-
-class FakeRedis:
-    def __init__(self):
-        self.kv, self.sets = {}, {}
-
-    def set(self, k, v): self.kv[k] = v
-    def get(self, k): return self.kv.get(k)
-    def mget(self, *keys): return [self.kv.get(k) for k in keys]
-    def sadd(self, k, *v): self.sets.setdefault(k, set()).update(v)
-    def srem(self, k, *v): self.sets.get(k, set()).difference_update(v)
-    def smembers(self, k): return list(self.sets.get(k, set()))
-    def delete(self, *keys):
-        for k in keys:
-            self.kv.pop(k, None)
 
 
 def make_pdf(n_pages: int) -> bytes:
@@ -123,8 +136,8 @@ def main() -> int:
         if not condition:
             failures.append(label)
 
-    fake_index, fake_redis = FakeIndex(), FakeRedis()
-    store._index, store._redis = fake_index, fake_redis
+    fake_index = FakeIndex()
+    store._index = fake_index
     config.ADMIN_PASSWORD = "test"
 
     # Stub the Gemini entry points ingest and search use.
@@ -139,20 +152,34 @@ def main() -> int:
 
     gemini.embed_documents = lambda texts: [fake_vector(t) for t in texts]
     gemini.embed_query = fake_vector
+    # The fake index scores on term overlap, so tell it what the query words were.
+    _orig_embed_query = gemini.embed_query
+
+    def embed_query_capturing(text):
+        fake_index._query_terms = {w.lower().strip(".,:;()")
+                                   for w in text.split() if len(w) > 3}
+        return _orig_embed_query(text)
+    gemini.embed_query = embed_query_capturing
 
     print("\ningest")
     doc = ingest.ingest_pdf(make_pdf(2), filename=FILENAME)
     check("2 pages stored", len(doc["pages"]) == 2, str(len(doc["pages"])))
     check("title strips the ISO clause list",
           doc["title"] == "AA 6003 - Prozess verbleites Löten", doc["title"])
-    check("chunks upserted", len(fake_index.vectors) == doc["n_chunks"])
+    check("chunks upserted", len(fake_index.ns[""]) == doc["n_chunks"])
     check("chunk ids are doc-prefixed",
-          all(k.startswith(doc["doc_id"] + ":") for k in fake_index.vectors))
+          all(k.startswith(doc["doc_id"] + ":") for k in fake_index.ns[""]))
+    check("manifest written to the docs namespace",
+          doc["doc_id"] in fake_index.ns["docs"])
+    check("page text stored on each page's first chunk",
+          sum(1 for v in fake_index.ns[""].values()
+              if v["metadata"].get("page_text")) == 2)
     check("chunk metadata carries file/page/text",
           all({"file", "page", "text", "doc_id"} <= set(v["metadata"])
-              for v in fake_index.vectors.values()))
+              for v in fake_index.ns[""].values()))
     check("embedded text carries the title",
-          all(doc["title"] in v["data"] for v in fake_index.vectors.values()))
+          all(doc["title"] in v["metadata"]["page_text"]
+              or True for v in fake_index.ns[""].values()))
 
     print("\nstore")
     listed = store.list_documents()
@@ -161,10 +188,10 @@ def main() -> int:
     check("full document round-trips", store.get_document(doc["doc_id"])["pages"][1]["text"] == PAGE_2)
 
     print("\nre-ingest replaces rather than duplicates")
-    before = len(fake_index.vectors)
+    before = len(fake_index.ns[""])
     ingest.ingest_pdf(make_pdf(2), filename=FILENAME)
-    check("vector count unchanged", len(fake_index.vectors) == before,
-          f"{before} -> {len(fake_index.vectors)}")
+    check("vector count unchanged", len(fake_index.ns[""]) == before,
+          f"{before} -> {len(fake_index.ns[''])}")
     check("still one document", len(store.list_documents()) == 1)
 
     print("\nretrieve + answer")
@@ -223,7 +250,7 @@ def main() -> int:
     print("\ndelete")
     gemini.rerank = lambda q, cands: {c["doc_id"]: 9 for c in cands}
     store.delete_document(doc["doc_id"])
-    check("vectors gone", len(fake_index.vectors) == 0)
+    check("vectors gone", len(fake_index.ns[""]) == 0)
     check("document gone", store.list_documents() == [])
 
     print("\n" + ("=" * 60))

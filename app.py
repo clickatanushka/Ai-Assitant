@@ -118,15 +118,9 @@ def api_status():
     configured = {
         "gemini": bool(config.GEMINI_API_KEY),
         "vector": bool(config.UPSTASH_VECTOR_URL and config.UPSTASH_VECTOR_TOKEN),
-        "redis": bool(config.UPSTASH_REDIS_URL and config.UPSTASH_REDIS_TOKEN),
         "admin_password": bool(config.ADMIN_PASSWORD),
     }
-    documents = None
-    if configured["redis"]:
-        try:
-            documents = len(store.redis().smembers(store.DOC_SET) or [])
-        except Exception:
-            documents = None
+    documents = store.document_count() if configured["vector"] else None
     return {"configured": configured, "documents": documents, **store.index_stats()}
 
 

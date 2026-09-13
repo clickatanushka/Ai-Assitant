@@ -10,8 +10,6 @@ import os
 GEMINI_API_KEY      = os.environ.get("GEMINI_API_KEY", "")
 UPSTASH_VECTOR_URL  = os.environ.get("UPSTASH_VECTOR_REST_URL", "")
 UPSTASH_VECTOR_TOKEN= os.environ.get("UPSTASH_VECTOR_REST_TOKEN", "")
-UPSTASH_REDIS_URL   = os.environ.get("UPSTASH_REDIS_REST_URL", "")
-UPSTASH_REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
 BLOB_TOKEN          = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
 ADMIN_PASSWORD      = os.environ.get("ADMIN_PASSWORD", "")
 
