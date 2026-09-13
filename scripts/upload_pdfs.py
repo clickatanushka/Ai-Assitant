@@ -19,6 +19,7 @@ re-running after an interruption is cheap.
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -46,19 +47,48 @@ def save_map(m: dict) -> None:
     URL_MAP.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def upload(path: pathlib.Path) -> str | None:
-    """`vercel blob put` prints the blob URL; pull it back out of the output."""
+NOISE = re.compile(r"^(npm notice|<claude-code-hint|Vercel CLI |\s*$)")
+
+
+def clean(output: str) -> str:
+    """Strip npm/CLI chatter so a real error is actually visible. The first
+    version of this buried the error behind notice lines and reported
+    'no URL in CLI output' 31 times in a row."""
+    return "\n".join(l for l in output.splitlines() if not NOISE.match(l)).strip()
+
+
+def blob_token() -> str:
+    token = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+    if not token:
+        sys.exit(
+            "BLOB_READ_WRITE_TOKEN is not set — no Blob store is connected yet.\n\n"
+            "  1. Vercel dashboard -> your project -> Storage -> Create Database -> Blob\n"
+            "  2. Connect it to the project\n"
+            "  3. npx vercel env pull .env.vercel\n"
+            "     grep BLOB_READ_WRITE_TOKEN .env.vercel >> .env\n"
+            "  4. re-run this script"
+        )
+    return token
+
+
+def upload(path: pathlib.Path, token: str) -> tuple[str | None, str]:
+    """`vercel blob put` prints the blob URL; pull it back out of the output.
+
+    The token is passed explicitly. Without it the CLI picks up VERCEL_OIDC_TOKEN
+    from .env.local (written by `vercel link`) and refuses, because OIDC auth
+    needs BLOB_STORE_ID alongside it.
+    """
     proc = subprocess.run(
-        ["npx", "vercel", "blob", "put", str(path), "--pathname", f"pdfs/{path.name}",
-         "--add-random-suffix=false", "--force"],
+        ["npx", "vercel", "blob", "put", str(path),
+         "--pathname", f"pdfs/{path.name}",
+         "--access", "public",
+         "--allow-overwrite", "true",
+         "--rw-token", token],
         capture_output=True, text=True, cwd=ROOT,
     )
-    combined = proc.stdout + proc.stderr
+    combined = clean(proc.stdout + proc.stderr)
     match = URL_RE.search(combined)
-    if match:
-        return match.group(0)
-    print(f"    no URL in CLI output: {combined.strip()[:200]}")
-    return None
+    return (match.group(0) if match else None), combined
 
 
 def main() -> int:
@@ -80,9 +110,12 @@ def main() -> int:
         return 0
     if not todo:
         print("Nothing to upload.")
+        return 0
 
+    token = blob_token()
+    failures = 0
     for i, path in enumerate(todo, 1):
-        url = upload(path)
+        url, output = upload(path, token)
         if url:
             urls[path.name] = url
             if i % 5 == 0:
@@ -90,7 +123,16 @@ def main() -> int:
             print(f"  [{i}/{len(todo)}] {path.stat().st_size/1e6:5.1f} MB  {path.name[:56]}",
                   flush=True)
         else:
-            print(f"  [{i}/{len(todo)}] FAILED {path.name[:56]}", flush=True)
+            failures += 1
+            print(f"  [{i}/{len(todo)}] FAILED {path.name[:56]}\n    {output[:400]}",
+                  flush=True)
+            # Stop rather than repeat the same failure 80 times: if the first two
+            # fail the cause is configuration, not this particular file.
+            if failures >= 2 and len(urls) == 0:
+                save_map(urls)
+                sys.exit("\nStopping — the first uploads all failed, so this is a "
+                         "setup problem rather than a bad file. Fix the error above "
+                         "and re-run; finished uploads are skipped.")
     save_map(urls)
     print(f"\n{len(urls)} URLs in {URL_MAP.relative_to(ROOT)}")
 
