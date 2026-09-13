@@ -18,3 +18,4 @@ transcribe.log
 .vercel
 .env*
 package-lock.json
+data/blob_urls.json

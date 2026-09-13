@@ -169,6 +169,17 @@
   .page-block { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
   .page-block h5 { font-size: 12px; font-weight: 700; padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--text-muted); }
   .page-block pre { padding: 14px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; font-family: 'Segoe UI', system-ui, sans-serif; }
+  .no-pdf-note { font-size: 12px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 13px; margin-bottom: 14px; }
+  .md-body { padding: 16px 18px; font-size: 13px; line-height: 1.7; }
+  h3.md, h4.md, h5.md, h6.md, h7.md, h8.md { font-size: 14px; font-weight: 700; margin: 16px 0 6px; }
+  .md-body > :first-child { margin-top: 0; }
+  p.md { margin: 0 0 10px; }
+  ul.md { margin: 0 0 10px 20px; }
+  ul.md li { margin-bottom: 3px; }
+  ul.md li.sub { margin-left: 16px; list-style: circle; }
+  table.md { width: 100%; border-collapse: collapse; margin: 10px 0 14px; font-size: 12.5px; }
+  table.md th, table.md td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
+  table.md th { background: var(--bg); font-weight: 700; }
   .page-block mark { background: #fef08a; padding: 1px 2px; border-radius: 2px; }
 
   /* Dashboard charts. Series colours are validated for colour-vision deficiency;
@@ -492,6 +503,77 @@ function renderAnswer(d) {
     </div>`;
 }
 
+// ── Markdown rendering for transcribed pages ──────────────────────────────
+// Gemini transcribes pages as Markdown — headings, tables, <br> inside cells.
+// Dumping that raw showed the auditor pipes and hashes. Everything is escaped
+// first and the tags are built here, so nothing from the document can inject.
+function renderMarkdown(src) {
+  const lines = String(src).split('\n');
+  const out = [];
+  let i = 0;
+
+  const inline = t => esc(t)
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')          // literal <br> from table cells
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Bold is consumed above, so any remaining paired asterisks are italics —
+    // no lookbehind needed, which also catches *text* straight after a <br>.
+    .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+
+  const isRow = l => /^\s*\|.*\|\s*$/.test(l);
+  const isRule = l => /^\s*\|[\s:|-]+\|\s*$/.test(l);
+  const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (isRow(line) && isRow(lines[i + 1] || '') && isRule(lines[i + 1])) {
+      const head = cells(line);
+      i += 2;
+      const body = [];
+      while (i < lines.length && isRow(lines[i])) { body.push(cells(lines[i])); i++; }
+      out.push(`<table class="md"><thead><tr>${
+        head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
+        body.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>`);
+      continue;
+    }
+    if (isRow(line)) {                       // a table with no header rule
+      const body = [];
+      while (i < lines.length && isRow(lines[i])) {
+        if (!isRule(lines[i])) body.push(cells(lines[i]));
+        i++;
+      }
+      out.push(`<table class="md"><tbody>${
+        body.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>`);
+      continue;
+    }
+
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { out.push(`<h${h[1].length + 2} class="md">${inline(h[2])}</h${h[1].length + 2}>`); i++; continue; }
+
+    if (/^\s*[*\-•]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[*\-•]\s+/.test(lines[i])) {
+        const depth = (lines[i].match(/^\s*/)[0].length >= 2) ? ' class="sub"' : '';
+        items.push(`<li${depth}>${inline(lines[i].replace(/^\s*[*\-•]\s+/, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="md">${items.join('')}</ul>`);
+      continue;
+    }
+
+    if (!line.trim()) { i++; continue; }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !isRow(lines[i])
+           && !/^#{1,6}\s/.test(lines[i]) && !/^\s*[*\-•]\s+/.test(lines[i])) {
+      para.push(lines[i]); i++;
+    }
+    out.push(`<p class="md">${inline(para.join('\n')).replace(/\n/g, '<br>')}</p>`);
+  }
+  return out.join('');
+}
+
 // ── source viewer ─────────────────────────────────────────────────────────
 let documentsCache = [];
 
@@ -511,10 +593,11 @@ async function openSource(file, page) {
   body.innerHTML = '<p style="color:var(--text-muted)">Loading transcription…</p>';
   try {
     const doc = await api(`/api/documents/${encodeURIComponent(meta.doc_id)}`);
-    body.innerHTML = doc.pages.map(p => `
+    body.innerHTML = `<div class="no-pdf-note">Showing the transcribed text — the
+      original PDF is not stored for this document.</div>` + doc.pages.map(p => `
       <div class="page-block" ${p.page === page ? 'style="border-color:var(--accent)"' : ''}>
         <h5>Seite ${esc(p.page)}${p.page === page ? ' — cited' : ''}</h5>
-        <pre>${esc(p.text)}</pre>
+        <div class="md-body">${renderMarkdown(p.text)}</div>
       </div>`).join('');
     const cited = body.querySelector('.page-block[style]');
     if (cited) cited.scrollIntoView({ block: 'start' });
