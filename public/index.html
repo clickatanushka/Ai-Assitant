@@ -170,6 +170,42 @@
   .page-block h5 { font-size: 12px; font-weight: 700; padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--text-muted); }
   .page-block pre { padding: 14px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; font-family: 'Segoe UI', system-ui, sans-serif; }
   .page-block mark { background: #fef08a; padding: 1px 2px; border-radius: 2px; }
+
+  /* Dashboard charts. Series colours are validated for colour-vision deficiency;
+     status colours are not (red/green are indistinguishable to a deuteranope), so
+     every status is also carried by a glyph and a written label. */
+  .viz {
+    --series-actual: #2a78d6;
+    --series-target: #eb6834;
+    --status-good: #0ca30c;
+    --status-warn: #fab219;
+    --status-bad: #d03b3b;
+    --grid: #edeae4;
+    --ink-muted: #6b6862;
+  }
+  .chart-row { display: grid; gap: 18px; margin-bottom: 18px; }
+  .chart-row.two { grid-template-columns: minmax(0,1fr) minmax(0,1.4fr); }
+  @media (max-width: 860px) { .chart-row.two { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px 20px; box-shadow: var(--shadow); min-width: 0; }
+  .chart-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .chart-card .sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+  .canvas-wrap { position: relative; height: 300px; }
+  .canvas-wrap.short { height: 230px; }
+  .hero { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .hero-num { font-size: 52px; font-weight: 700; line-height: 1; }
+  .hero-cap { font-size: 13px; color: var(--text-muted); }
+  .status-legend { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+  .status-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+  .status-row .glyph { width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .status-row .nm { flex: 1; color: var(--text); }
+  .status-row .ct { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .table-view { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px 18px; }
+  .table-view summary { font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+  .table-view table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  .table-view th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .table-view td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .table-view tr:last-child td { border-bottom: none; }
+  .table-view .num { text-align: right; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -245,7 +281,35 @@
         <h3>Enter Graph Data</h3>
         <div class="graph-grid" id="graphInputGrid"></div>
       </div>
-      <div class="charts-grid" id="chartsGrid"></div>
+      <div class="viz" id="chartsArea">
+        <div class="chart-row">
+          <section class="chart-card">
+            <h4>Actual against target</h4>
+            <div class="sub">Each metric's current value beside the value it is aiming at.</div>
+            <div class="canvas-wrap"><canvas id="chartActualTarget"></canvas></div>
+          </section>
+        </div>
+        <div class="chart-row two">
+          <section class="chart-card">
+            <h4>Metrics by status</h4>
+            <div class="sub">How many metrics sit on, near, or below their target.</div>
+            <div class="canvas-wrap short">
+              <canvas id="chartStatus"></canvas>
+              <div id="statusHero" class="hero" style="display:none"></div>
+            </div>
+            <div class="status-legend" id="statusLegend"></div>
+          </section>
+          <section class="chart-card">
+            <h4>Achievement against target</h4>
+            <div class="sub">Percentage of target reached, ranked. The dashed line is 100%.</div>
+            <div class="canvas-wrap" id="achievementWrap"><canvas id="chartAchievement"></canvas></div>
+          </section>
+        </div>
+        <details class="table-view">
+          <summary>View the numbers as a table</summary>
+          <div id="dashTable"></div>
+        </details>
+      </div>
     </div>
 
   </div>
@@ -274,6 +338,7 @@
     <div id="viewerBody" style="flex:1;overflow:auto;padding:18px"></div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 // ── helpers ───────────────────────────────────────────────────────────────
 function esc(s) {
@@ -630,34 +695,200 @@ function renderCharts() {
     target: parseFloat(document.getElementById(`g_target_${i}`)?.value) || 0,
   }));
   saveGraphData(data);
+  drawDashboard(data.filter(g => g.actual || g.target));
+}
 
-  document.getElementById('chartsGrid').innerHTML = data.map(g => {
-    if (!g.title.trim() && !g.actual && !g.target) return '';
-    const pct = g.target > 0 ? Math.round((g.actual / g.target) * 100) : null;
-    const pctClass = pct === null ? 'on' : pct >= 100 ? 'over' : pct >= 80 ? 'on' : 'under';
-    const pctText = pct !== null ? `${pct}% of target` : 'No target';
-    const barW = pct !== null ? Math.min(pct, 100) : (g.actual > 0 ? 100 : 0);
-    const targetPct = g.target > 0 && g.actual > 0
-      ? Math.min(Math.round((g.target / Math.max(g.actual, g.target)) * 100), 100) : 100;
-    return `
-      <div class="chart-card">
-        <h4>${esc(g.title)}</h4>
-        <div class="chart-nums">
-          <div class="chart-num actual"><strong>${g.actual.toLocaleString()}</strong>Actual</div>
-          <div class="chart-num"><strong>${g.target.toLocaleString()}</strong>Target</div>
-        </div>
-        <span class="pct-pill ${pctClass}">${pctText}</span>
-        <div class="bar-wrap">
-          <div class="bar-actual" style="width:${barW}%"><span>${g.actual.toLocaleString()}</span></div>
-          ${g.target > 0 ? `<div class="bar-target-line" style="left:${targetPct}%"></div>` : ''}
-        </div>
-      </div>`;
-  }).join('');
+// ── Chart.js dashboard ────────────────────────────────────────────────────
+// Series colours are the validated categorical slots 1 and 2 (blue/orange):
+// adjacent CVD ΔE 24.7, normal-vision 33.6, both above 3:1 on white.
+// Status colours are NOT colour-vision-safe against each other — red and green
+// sit at ΔE 4.1 for a deuteranope — so every status also carries a glyph and a
+// written label, and the table view below repeats the numbers outright.
+const VIZ = {
+  actual: '#2a78d6', target: '#eb6834',
+  good: '#0ca30c', warn: '#fab219', bad: '#d03b3b',
+  grid: '#edeae4', ink: '#1a1917', muted: '#6b6862',
+};
+const STATUS = [
+  { key: 'good', label: 'On or above target', glyph: '✓', color: VIZ.good },
+  { key: 'warn', label: 'Within 20% of target', glyph: '!', color: VIZ.warn },
+  { key: 'bad', label: 'More than 20% below', glyph: '✕', color: VIZ.bad },
+];
+const charts = {};
+
+function statusOf(g) {
+  if (!g.target) return null;
+  const pct = (g.actual / g.target) * 100;
+  return pct >= 100 ? 'good' : pct >= 80 ? 'warn' : 'bad';
+}
+
+const tooltipStyle = {
+  backgroundColor: VIZ.ink, padding: 10, cornerRadius: 4, displayColors: true,
+  titleFont: { size: 12, weight: '600' }, bodyFont: { size: 12 },
+};
+const axisStyle = {
+  grid: { color: VIZ.grid, drawTicks: false },
+  border: { display: false },
+  ticks: { color: VIZ.muted, font: { size: 11 }, padding: 8 },
+};
+
+function drawDashboard(data) {
+  Object.values(charts).forEach(c => c?.destroy());
+  const area = document.getElementById('chartsArea');
+  if (!data.length) {
+    area.style.display = 'none';
+    return;
+  }
+  area.style.display = '';
+  const labels = data.map(g => g.title);
+
+  // 1 — Actual vs target. Two series, so a legend is always present.
+  charts.at = new Chart(document.getElementById('chartActualTarget'), {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Actual', data: data.map(g => g.actual), backgroundColor: VIZ.actual,
+        borderRadius: 4, borderSkipped: false, maxBarThickness: 34 },
+      { label: 'Target', data: data.map(g => g.target), backgroundColor: VIZ.target,
+        borderRadius: 4, borderSkipped: false, maxBarThickness: 34 },
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      // 2px of surface between the paired bars, per the mark spec.
+      datasets: { bar: { barPercentage: 0.82, categoryPercentage: 0.72 } },
+      plugins: {
+        legend: { position: 'top', align: 'end',
+          labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true,
+                    pointStyle: 'rectRounded', color: VIZ.muted, font: { size: 12 } } },
+        tooltip: tooltipStyle,
+      },
+      scales: {
+        x: { ...axisStyle, grid: { display: false } },
+        y: { ...axisStyle, beginAtZero: true },
+      },
+    },
+  });
+
+  // 2 — Metrics by status. A count of metrics, not a sum of their values:
+  // adding "training hours" to "defect count" would be meaningless.
+  const counts = STATUS.map(st => data.filter(g => statusOf(g) === st.key).length);
+  const untracked = data.filter(g => statusOf(g) === null).length;
+
+  // A ring with one populated slice is a one-slice pie — it carries no comparison.
+  // When every metric shares a status the story is a single number, so say it as one.
+  const populated = counts.filter(n => n).length + (untracked ? 1 : 0);
+  const statusCanvas = document.getElementById('chartStatus');
+  const heroEl = document.getElementById('statusHero');
+  if (populated < 2) {
+    statusCanvas.style.display = 'none';
+    heroEl.style.display = '';
+    const only = STATUS.find((st, i) => counts[i]);
+    const n = only ? counts[STATUS.indexOf(only)] : untracked;
+    heroEl.innerHTML = `
+      <div class="hero-num" style="color:${only ? only.color : 'var(--text-muted)'}">${n}</div>
+      <div class="hero-cap">${only ? esc(only.glyph + '  ' + only.label.toLowerCase())
+                                   : 'metrics have no target set'}</div>`;
+  } else {
+    statusCanvas.style.display = '';
+    heroEl.style.display = 'none';
+  }
+
+  charts.status = populated < 2 ? null : new Chart(statusCanvas, {
+    type: 'doughnut',
+    data: { labels: STATUS.map(s => s.label),
+            datasets: [{ data: counts, backgroundColor: STATUS.map(s => s.color),
+                         borderColor: '#fff', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...tooltipStyle, callbacks: {
+          label: c => ` ${c.parsed} metric${c.parsed === 1 ? '' : 's'}` } },
+      },
+    },
+  });
+  document.getElementById('statusLegend').innerHTML = STATUS.map((st, i) => `
+    <div class="status-row">
+      <span class="glyph" style="background:${st.color}">${st.glyph}</span>
+      <span class="nm">${esc(st.label)}</span>
+      <span class="ct">${counts[i]}</span>
+    </div>`).join('') + (untracked ? `
+    <div class="status-row">
+      <span class="glyph" style="background:var(--border-strong)">–</span>
+      <span class="nm">No target set</span>
+      <span class="ct">${untracked}</span>
+    </div>` : '');
+
+  // 3 — Achievement against target, ranked. Horizontal so long metric names fit.
+  const ranked = data.filter(g => g.target)
+    .map(g => ({ ...g, pct: Math.round((g.actual / g.target) * 100) }))
+    .sort((a, b) => b.pct - a.pct);
+  document.getElementById('achievementWrap').style.height =
+    Math.max(200, ranked.length * 38 + 40) + 'px';
+  charts.ach = new Chart(document.getElementById('chartAchievement'), {
+    type: 'bar',
+    data: { labels: ranked.map(g => g.title),
+            datasets: [{ label: '% of target', data: ranked.map(g => g.pct),
+                         backgroundColor: ranked.map(g => VIZ[statusOf(g)]),
+                         borderRadius: 4, borderSkipped: false, maxBarThickness: 22 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },   // one series — the title names it
+        tooltip: { ...tooltipStyle,
+                   callbacks: { label: c => ` ${c.parsed.x}% of target` } },
+        // A dashed rule at 100% so "met the target" is readable without arithmetic.
+        target100: {},
+      },
+      scales: {
+        x: { ...axisStyle, beginAtZero: true,
+             ticks: { ...axisStyle.ticks, callback: v => v + '%' } },
+        y: { ...axisStyle, grid: { display: false } },
+      },
+    },
+    plugins: [{
+      id: 'target100',
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!scales.x || scales.x.max < 100) return;
+        const x = scales.x.getPixelForValue(100);
+        ctx.save();
+        ctx.strokeStyle = VIZ.muted; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = VIZ.muted; ctx.font = '600 11px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('target', x, chartArea.top - 6);
+        ctx.restore();
+      },
+    }],
+  });
+
+  // Table view — the relief for anyone who cannot separate the status colours.
+  document.getElementById('dashTable').innerHTML = `
+    <table>
+      <thead><tr><th>Metric</th><th class="num">Actual</th><th class="num">Target</th>
+        <th class="num">% of target</th><th>Status</th></tr></thead>
+      <tbody>${data.map(g => {
+        const st = statusOf(g);
+        const row = STATUS.find(s => s.key === st);
+        return `<tr>
+          <td>${esc(g.title)}</td>
+          <td class="num">${g.actual.toLocaleString()}</td>
+          <td class="num">${g.target ? g.target.toLocaleString() : '—'}</td>
+          <td class="num">${g.target ? Math.round((g.actual / g.target) * 100) + '%' : '—'}</td>
+          <td>${row ? `${row.glyph} ${esc(row.label)}` : '— No target set'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
 }
 
 // ── init ──────────────────────────────────────────────────────────────────
 checkStatus();
 loadDocuments(true);
+buildGraphInputs();
+drawDashboard((loadGraphData() || []).filter(g => g.actual || g.target));
 </script>
 </body>
 </html>
