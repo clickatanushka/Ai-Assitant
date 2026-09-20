@@ -189,10 +189,18 @@ def document_count() -> int | None:
 # ── Blob (read-only from Python) ──────────────────────────────────────────────
 
 def fetch_blob(url: str, *, timeout: int = 120, max_bytes: int = 60_000_000) -> bytes:
-    """Download a PDF that api/blob.ts (or the Vercel CLI) already stored."""
+    """Download a PDF from Blob.
+
+    The store is private, so an unauthenticated request gets a 403; the read-write
+    token has to travel as a bearer header. That is the point — the PDFs are
+    confidential and must not be anonymously fetchable.
+    """
     if not url.startswith("https://"):
         raise ValueError("blob url must be https")
-    req = urllib.request.Request(url, headers={"User-Agent": "audit-assistant"})
+    headers = {"User-Agent": "audit-assistant"}
+    if config.BLOB_TOKEN:
+        headers["Authorization"] = f"Bearer {config.BLOB_TOKEN}"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read(max_bytes + 1)
     if len(data) > max_bytes:

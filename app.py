@@ -9,7 +9,7 @@ import os
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -60,6 +60,34 @@ def api_document(doc_id: str):
     if not doc:
         raise HTTPException(404, "No such document")
     return doc
+
+
+@app.get("/api/pdf/{doc_id}")
+def api_pdf(doc_id: str):
+    """Stream a document's original PDF.
+
+    Blob is a private store, so the browser cannot fetch the blob URL itself —
+    it 403s without a bearer token, and putting that token in the page would
+    defeat the point. The function fetches it and passes the bytes on instead.
+    """
+    doc = store.get_document(doc_id)
+    if not doc:
+        raise HTTPException(404, "No such document")
+    url = doc.get("blob_url")
+    if not url:
+        raise HTTPException(404, "No PDF stored for this document")
+    try:
+        pdf = store.fetch_blob(url)
+    except Exception as e:
+        raise HTTPException(502, f"Could not fetch the stored PDF: {e}") from e
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{doc_id}.pdf"',
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
 
 
 @app.post("/api/ingest")

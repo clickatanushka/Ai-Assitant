@@ -33,7 +33,7 @@ from bulk_ingest import find_pdfs, load_env  # noqa: E402
 load_env()
 
 URL_MAP = ROOT / "data" / "blob_urls.json"
-URL_RE = re.compile(r"https://[^\s\"']+\.public\.blob\.vercel-storage\.com/\S+")
+URL_RE = re.compile(r"https://[^\s\"']+\.(?:public|private)\.blob\.vercel-storage\.com/\S+")
 
 
 def load_map() -> dict:
@@ -97,7 +97,10 @@ def upload(path: pathlib.Path, auth: list[str]) -> tuple[str | None, str]:
     proc = subprocess.run(
         ["npx", "vercel", "blob", "put", str(path),
          "--pathname", f"pdfs/{path.name}",
-         "--access", "public",
+         # Private: these are confidential audit documents, and a public blob URL
+         # is anonymously readable by anyone who ever sees it. The app serves them
+         # back through /api/pdf/<doc_id>, which attaches the token server-side.
+         "--access", "private",
          "--allow-overwrite", "true",
          *auth],
         capture_output=True, text=True, cwd=ROOT,

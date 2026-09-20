@@ -586,8 +586,10 @@ async function openSource(file, page) {
   const body = document.getElementById('viewerBody');
 
   if (meta.blob_url) {
+    // Not the blob URL directly — the store is private and 403s without a token.
+    // /api/pdf/<doc_id> attaches it server-side.
     body.innerHTML = `<embed type="application/pdf" style="width:100%;height:100%;min-height:70vh"
-                        src="${esc(meta.blob_url)}#page=${Number(page)}">`;
+                        src="/api/pdf/${encodeURIComponent(meta.doc_id)}#page=${Number(page)}">`;
     return;
   }
   body.innerHTML = '<p style="color:var(--text-muted)">Loading transcription…</p>';
