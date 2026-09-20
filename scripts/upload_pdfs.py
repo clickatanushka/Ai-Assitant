@@ -57,33 +57,49 @@ def clean(output: str) -> str:
     return "\n".join(l for l in output.splitlines() if not NOISE.match(l)).strip()
 
 
-def blob_token() -> str:
+def auth_flags() -> list[str]:
+    """Vercel Blob accepts either a read-write token or OIDC + store id.
+
+    OIDC is what a linked project gets by default, but it is enabled per
+    environment and is typically off for "development" — so running this from a
+    laptop fails with "OIDC is enabled for this project, but not for the
+    development environment". The read-write token works everywhere, so it wins
+    when present.
+    """
     token = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
-    if not token:
-        sys.exit(
-            "BLOB_READ_WRITE_TOKEN is not set — no Blob store is connected yet.\n\n"
-            "  1. Vercel dashboard -> your project -> Storage -> Create Database -> Blob\n"
-            "  2. Connect it to the project\n"
-            "  3. npx vercel env pull .env.vercel\n"
-            "     grep BLOB_READ_WRITE_TOKEN .env.vercel >> .env\n"
-            "  4. re-run this script"
-        )
-    return token
+    if token:
+        return ["--rw-token", token]
+
+    oidc = os.environ.get("VERCEL_OIDC_TOKEN", "").strip()
+    store = os.environ.get("BLOB_STORE_ID", "").strip()
+    if oidc and store:
+        return ["--oidc-token", oidc, "--store-id", store]
+
+    sys.exit(
+        "No Blob credentials.\n\n"
+        "Get the read-write token — it is the one that works from a laptop:\n"
+        "  Vercel dashboard -> Storage -> your Blob store -> the '.env.local' tab\n"
+        "  in the Quickstart panel. Copy the BLOB_READ_WRITE_TOKEN=... line.\n\n"
+        "  echo 'BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...' >> .env\n"
+        "  .venv/bin/python scripts/upload_pdfs.py\n\n"
+        "(OIDC also works, but only in environments where it is enabled — usually\n"
+        " Production and Preview, not development.)"
+    )
 
 
-def upload(path: pathlib.Path, token: str) -> tuple[str | None, str]:
+def upload(path: pathlib.Path, auth: list[str]) -> tuple[str | None, str]:
     """`vercel blob put` prints the blob URL; pull it back out of the output.
 
-    The token is passed explicitly. Without it the CLI picks up VERCEL_OIDC_TOKEN
-    from .env.local (written by `vercel link`) and refuses, because OIDC auth
-    needs BLOB_STORE_ID alongside it.
+    Credentials are passed explicitly. Left to itself the CLI picks up a stale
+    VERCEL_OIDC_TOKEN from .env.local (written by `vercel link`, and short-lived)
+    and fails with an access error that looks nothing like an expiry.
     """
     proc = subprocess.run(
         ["npx", "vercel", "blob", "put", str(path),
          "--pathname", f"pdfs/{path.name}",
          "--access", "public",
          "--allow-overwrite", "true",
-         "--rw-token", token],
+         *auth],
         capture_output=True, text=True, cwd=ROOT,
     )
     combined = clean(proc.stdout + proc.stderr)
@@ -112,10 +128,10 @@ def main() -> int:
         print("Nothing to upload.")
         return 0
 
-    token = blob_token()
+    auth = auth_flags()
     failures = 0
     for i, path in enumerate(todo, 1):
-        url, output = upload(path, token)
+        url, output = upload(path, auth)
         if url:
             urls[path.name] = url
             if i % 5 == 0:
